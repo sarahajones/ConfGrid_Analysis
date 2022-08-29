@@ -243,7 +243,7 @@ modelData <- modelData %>%
   )) 
 modelData <- subset(modelData, select = -c(sumDistCol, sumDistSize))
 
-############## 3.0 Grid simulations ###########################################
+############### 3.0 Grid simulations ###########################################
 #Simulate under these models 
 #The idea would be to calculate these for each point in the 2D space 
 #to compare with people's actual reported confidence. 
@@ -278,16 +278,22 @@ x1[201:400, 401:601] <- abs((1/3) - y[201:400, 401:601]) #based on color
 
 #we now have 3 grid "areas" that need adapting for distance 
 #these distances will vary depending on what model of distance/confidence we have
-
+############### 3.1 Minimum Distance ###########################################
 #• Minimum distance to bound (out of the two dimensions)
 x2 <- x1 #most are the same or defined by a single dimension (i.e. the other is irrelevant)
 
 #the weird diagonal grid boxes are defined by either, 
-#grid1_1
+#grid1_1 - this is the odd one out we need to find distance to a single point (.33, .33)
 minDistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
 minDistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
-minimumDistance1_1 <- ifelse(((minDistCol-minDistSize)<0),  minDistSize, minDistCol) 
-x2[401:601, 1:200] <- minimumDistance1_1 #THIS ONE HAS THE LOGIC FLIPPED 
+#now we need to find the hypotenuse between them - 
+#it's length will be the same as the distance to the (.33,.33) point
+pythagorean <- function(a, b) {
+  hypotenuse <- sqrt(a^2 + b^2)
+  return(hypotenuse)
+}
+x2[401:601, 1:200] <- pythagorean(minDistCol,minDistSize)
+
 
 #grid2_2
 minDistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
@@ -302,6 +308,8 @@ minimumDistance3_3 <- ifelse(((minDistCol-minDistSize)>0),  minDistSize, minDist
 x2[1:200, 401:601] <- minimumDistance3_3 
 #x2 is now confidence proxy based on minimum distance to boundary in space
 x2 <- ((x2/(2/3))*100) #set it into 0-100 space
+
+#x2 is now a matrix of confidence values under the minimum distance model 
 
 # Data 
 colnames(x2) <- paste("Col", 1:601)
@@ -320,16 +328,86 @@ ggplot(dfX, aes(x = x, y = y, fill = value)) +
         axis.text.y=element_blank(),  #remove y axis labels
         axis.ticks.y=element_blank() ) #remove y axis ticks
 
-
-
+############### 3.2 Maximum Distance ###########################################
 #• Maximum distance to bound (out of the two dimensions)
 x3 <- x1
 
+#the weird diagonal grid boxes are defined by either, 
+#grid1_1
+maxDistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
+maxDistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
+maximumDistance1_1 <- ifelse(((maxDistCol-maxDistSize)<0),  maxDistSize, maxDistCol) 
+x3[401:601, 1:200] <- maximumDistance1_1 
+
+#grid2_2
+maxDistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
+maxDistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
+maximumDistance2_2 <- ifelse(((maxDistCol-maxDistSize)<0),  maxDistSize, maxDistCol) 
+x3[201:400, 201:400] <- maximumDistance2_2 
+
+#grid3_3 
+maxDistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
+maxDistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
+maximumDistance3_3 <- ifelse(((maxDistCol-maxDistSize)<0),  maxDistSize, maxDistCol) 
+x3[1:200, 401:601] <- maximumDistance3_3 
+#x3 is now confidence proxy based on minimum distance to boundary in space
+x3 <- ((x3/(2/3))*100) #set it into 0-100 space
+
+# Data 
+colnames(x3) <- paste("Col", 1:601)
+rownames(x3) <- paste("Row", 1:601)
+
+# Transform the matrix in long format
+dfX2 <- melt(x3)
+colnames(dfX2) <- c("x", "y", "value")
+dfX2$x <- rev(dfX2$x) #THIS ORDER ALSO NEEDS REVERSING 
+ggplot(dfX2, aes(x = x, y = y, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  coord_fixed() +
+  theme(axis.text.x=element_blank(), #remove x axis labels
+        axis.ticks.x=element_blank(), #remove x axis ticks
+        axis.text.y=element_blank(),  #remove y axis labels
+        axis.ticks.y=element_blank() ) #remove y axis ticks
+
+############### 3.3 Summed Distance ###########################################
 #• Summed distance to bound (along the two dimensions)
 x4 <- x1
 
+#the weird diagonal grid boxes are defined by either, 
+#grid1_1
+sumDistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
+sumDistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
+sumDistance1_1 <- sumDistCol + sumDistSize 
+x4[401:601, 1:200] <- sumDistance1_1 
 
+#grid2_2
+sumDistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
+sumDistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
+sumDistance2_2 <- sumDistCol + sumDistSize
+x4[201:400, 201:400] <- sumDistance2_2 
 
+#grid3_3 
+sumDistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
+sumDistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
+sumDistance3_3 <- sumDistCol + sumDistSize 
+x4[1:200, 401:601] <- sumDistance3_3 
+#x4 is now confidence proxy based on minimum distance to boundary in space
+x4 <- ((x4/(2/3))*100) #set it into 0-100 space
 
+# Data 
+colnames(x4) <- paste("Col", 1:601)
+rownames(x4) <- paste("Row", 1:601)
 
-
+# Transform the matrix in long format
+dfX3 <- melt(x4)
+colnames(dfX3) <- c("x", "y", "value")
+dfX3$x <- rev(dfX3$x) #THIS ORDER ALSO NEEDS REVERSING 
+ggplot(dfX3, aes(x = x, y = y, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  coord_fixed() +
+  theme(axis.text.x=element_blank(), #remove x axis labels
+        axis.ticks.x=element_blank(), #remove x axis ticks
+        axis.text.y=element_blank(),  #remove y axis labels
+        axis.ticks.y=element_blank() ) #remove y axis ticks
