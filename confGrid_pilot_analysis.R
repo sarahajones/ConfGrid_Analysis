@@ -6,32 +6,27 @@
 #GitHub: sarahajones
 
 ############### 0.1 Script Set-Up ##############################################
-#LOAD IN PACKAGES
-library(tidyverse)
-library(readr) 
-library(plyr)
-library(dplyr)
-library(ggplot2)
+# Set the working directory to the folder that this file is in:
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-library(reshape)
+#LOAD IN PACKAGES
+# Create a list of the required packages:
+list.of.packages <- c("tidyverse",
+                      "ggplot2",
+                      "patchwork",
+                      "reshape",
+                      "readr",
+                      "plyr",
+                      "dplyr"
+                      )
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])] #check for any uninstalled packages
+if(length(new.packages)) install.packages(new.packages) #install any missing packages (requires internet access)
+lapply(list.of.packages, require, character.only = TRUE) #library all required packages
+rm(list.of.packages, new.packages)
 
 #DATA LOADING
-mydir = setwd("C:/Users/A-J/Desktop/confGrid/raw_data")
-myfile = list.files(path=mydir, pattern="zapGrid*", full.names=TRUE) #pull file
-dat_csv = ldply(myfile, read_csv) #load in data
+dat_csv <- read_csv(file = "ConfGrid1_Study_CleanData.csv")#load in data
 numParticipants <- 58
-
-#create a PID code to identify participants more clearly. 
-user_ids <- unique(dat_csv$user_id) # cache this to save recalculating 
-dat_csv$PID <- NA_real_ # initalise PIDs as NA
-dat_csv$PID <- sapply(
-  dat_csv$user_id,  # vector to iterate over
-  function(id) which(user_ids == id)  # function to apply to each element
-)
-#remove identifiable information - user_id column
-dat_csv <- subset(dat_csv, select = -(user_id))
-
-rm(mydir, myfile, user_ids)
 
 ############### 1.0 Quick data quality checks ################################
 #PARTICIPANT COMMENTS
@@ -72,6 +67,7 @@ ambi <- sum(handedness == 'ambidextrous') #2ambi
 
 rm(gender, female, male, nonbinary, handedness, right, ambi, ageData, genderData, handData)
 
+############### 1.1 Confidence checks and calculations #########################
 #lets have a look at confidence across the space 
 dat_csv$confidence <- as.numeric(dat_csv$confidence)
 confidence <- subset(dat_csv,is.na(confidence) == FALSE)
@@ -90,11 +86,11 @@ ggplot(data=confidence, aes(fish_size)) +
 #plotting confidence scores normalised, (z-scored within participant)
 meanConf <- confidence %>%
   group_by(PID) %>%
-  summarise(mean(confidence))
+  dplyr::summarise(mean(confidence))
 
 sdConf <- confidence %>%
   group_by(PID) %>%
-  summarise(sd(confidence))
+  dplyr::summarise(sd(confidence))
 
 zConf <- matrix(data = NA, nrow = 160, ncol = numParticipants)
 pps <- 1:numParticipants
@@ -119,7 +115,7 @@ for(i in pp){
   zConfCol <- rbind(zConfCol, z)
 }
 
-zConf <- subset(zConfCol, is.na(conf)!= TRUE) #remove the 17 missing trials to match up the oclumns with confidence
+zConf <- subset(zConfCol, is.na(conf)!= TRUE) #remove the 17 missing trials to match up the columns with confidence
 
 confidence$zConf <- zConf$conf
 
@@ -136,114 +132,14 @@ ggplot(data=confidence, aes(fish_size)) +
   scale_alpha_manual(values=c(0.2,0.5)) +
   facet_wrap( ~ PID)
 
-############### 2.0 Comparing models of confidence #############################
-#start generating predictions for different possible models of confidence in the task, 
-#and we can ask (e.g., via a simple measure like mean-squared error or correlation, 
-#or perhaps something more sophisticated [tbd]) which of these models best fits the data -- 
-#of individual subjects, and/or in aggregate. 
-#Some simple models we could consider to get us started are:
-#• Summed distance to bound (along the two dimensions)
-#• Minimum distance to bound (out of the two dimensions)
-#• Maximum distance to bound (out of the two dimensions)
-#The idea would be to calculate these for each point in the 2D space to compare with people's actual reported confidence. 
-#Simple correlation with these might be a useful first step, and then we could make things more complex 
-#(e.g., allowing confidence to be some non-linear function of the measured distance).
+#okay - we can see some variability across pp - 
+#some pp highly confident always e.g. pp4, some low confidence always e.g. pp 12
+#some showing nice lowered confidence along the category bound e.g. pp 21
 
-modelData <- confidence[c("PID", "distribution_name","grid_box", "confidence", "fish_color", "fish_size")]
+rm(meanConf, PIDConf, sdConf, x, z, zConf, zConfCol, i, j, 
+   pp, pps, trials)
 
-#lets put size in the same space as color 0-1 space
-modelData$fish_size <- ((modelData$fish_size-200)/600)
-
-# check which are the most relevant dimensions for which area of the categroy space
-modelData <- modelData %>%
-  mutate(relevantBoundary = case_when(
-    grid_box == "box3_1" ~ 1, #"size",
-    grid_box == "box3_2" ~ 1, #"size",
-    grid_box == "box2_1" ~ 1, #"size",
-    grid_box == "box1_3" ~ 2, #"color",
-    grid_box == "box2_3" ~ 2, #"color",
-    grid_box == "box1_2" ~ 2, #"color",
-    TRUE ~ 3 #both potentially or trial dependent ~ will have to check trial by trial
-  )) 
-
-#Let's first consider
-#• Minimum distance to bound (out of the two dimensions)
-#if confidence is scaled relative to the minimum distance to the bound out of the two dimension
-#is the minimum distance reduces  to 0 then confidence is 0, if it is maximal then confidence is 1
-
-modelData <- modelData %>% 
-  mutate(minimumDistance = case_when (
-    relevantBoundary == 1 ~ abs((1/3) - fish_size),
-    relevantBoundary == 2 ~ abs((1/3) - fish_color),
-    )) %>% #now let's look at the border cases 
-  mutate(minDistCol = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_color),
-    grid_box == "box2_2" ~ abs((1/3) - fish_color),
-    grid_box == "box3_3" ~ abs((1/3) - fish_color)
-  )) %>%
-  mutate(minDistSize = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_size),
-    grid_box == "box2_2" ~ abs((1/3) - fish_size),
-    grid_box == "box3_3" ~ abs((1/3) - fish_size)
-  )) %>% 
-  mutate(minimumDistance = case_when (
-    relevantBoundary == 3 & (minDistCol-minDistSize)> 0 ~ minDistSize,
-    relevantBoundary == 3 & (minDistCol-minDistSize)< 0 ~ minDistCol,
-    TRUE ~ minimumDistance #minimum distance is scaled from 0-0.66
-  )) %>%
-  mutate(minimumDistance = ((minimumDistance/(2/3))*100))
-  
-modelData <- subset(modelData, select = -c(minDistCol, minDistSize))
-
-#• Maximum distance to bound (out of the two dimensions)
-modelData <- modelData %>% 
-  mutate(maximumDistance = case_when (
-    relevantBoundary == 1 ~ abs((1/3) - fish_size),
-    relevantBoundary == 2 ~ abs((1/3) - fish_color),
-  )) %>% #now let's look at the border cases 
-  mutate(maxDistCol = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_color),
-    grid_box == "box2_2" ~ abs((1/3) - fish_color),
-    grid_box == "box3_3" ~ abs((1/3) - fish_color)
-  )) %>%
-  mutate(maxDistSize = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_size),
-    grid_box == "box2_2" ~ abs((1/3) - fish_size),
-    grid_box == "box3_3" ~ abs((1/3) - fish_size)
-  )) %>% 
-  mutate(maximumDistance = case_when (
-    relevantBoundary == 3 & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
-    relevantBoundary == 3 & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
-    TRUE ~ maximumDistance 
-  )) %>%
-  mutate(maximumDistance = ((maximumDistance/(2/3))*100))
-
-modelData <- subset(modelData, select = -c(maxDistCol, maxDistSize))
-
-#• Summed distance to bound (along the two dimensions)
-#• Maximum distance to bound (out of the two dimensions)
-modelData <- modelData %>% 
-  mutate(summedDistance = case_when (
-    relevantBoundary == 1 ~ abs((1/3) - fish_size),
-    relevantBoundary == 2 ~ abs((1/3) - fish_color),
-  )) %>% #now let's look at the border cases 
-  mutate(sumDistCol = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_color),
-    grid_box == "box2_2" ~ abs((1/3) - fish_color),
-    grid_box == "box3_3" ~ abs((1/3) - fish_color)
-  )) %>%
-  mutate(sumDistSize = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_size),
-    grid_box == "box2_2" ~ abs((1/3) - fish_size),
-    grid_box == "box3_3" ~ abs((1/3) - fish_size)
-  )) %>% 
-  mutate(summedDistance = case_when (
-    relevantBoundary == 3  ~ sumDistCol + sumDistSize,
-    TRUE ~ summedDistance 
-  )) 
-modelData <- subset(modelData, select = -c(sumDistCol, sumDistSize))
-
-############### 3.0 Grid simulations ###########################################
+############### 2.0 Grid simulations ###########################################
 #Simulate under these models 
 #The idea would be to calculate these for each point in the 2D space 
 #to compare with people's actual reported confidence. 
@@ -276,80 +172,87 @@ x1[401:601, 201:601] <- abs((1/3) - y[401:601, 201:601]) #based on color
 #from size 600-800, when color is less than 0.66 distance based on color
 x1[201:400, 401:601] <- abs((1/3) - y[201:400, 401:601]) #based on color
 
+rm(gridX_row, gridY_col)
 #we now have 3 grid "areas" that need adapting for distance 
+#(in some models, some other gir areas will also need adapting too)
 #these distances will vary depending on what model of distance/confidence we have
-############### 3.1 Minimum Distance ###########################################
+############### 2.1 Minimum Distance ###########################################
 #• Minimum distance to bound (out of the two dimensions)
 x2 <- x1 #most are the same or defined by a single dimension (i.e. the other is irrelevant)
 
 #the weird diagonal grid boxes are defined by either, 
 #grid1_1 - this is the odd one out we need to find distance to a single point (.33, .33)
-minDistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
-minDistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
+DistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
+DistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
 #now we need to find the hypotenuse between them - 
 #it's length will be the same as the distance to the (.33,.33) point
 pythagorean <- function(a, b) {
   hypotenuse <- sqrt(a^2 + b^2)
   return(hypotenuse)
 }
-x2[401:601, 1:200] <- pythagorean(minDistCol,minDistSize)
-
+x2[401:601, 1:200] <- pythagorean(DistCol,DistSize)
 
 #grid2_2
-minDistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
-minDistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
-minimumDistance2_2 <- ifelse(((minDistCol-minDistSize)>0),  minDistSize, minDistCol) 
-x2[201:400, 201:400] <- minimumDistance2_2 
+DistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
+DistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
+x2[201:400, 201:400] <- ifelse(((DistCol-DistSize)>0),  DistSize, DistCol) 
 
 #grid3_3 
-minDistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
-minDistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
-minimumDistance3_3 <- ifelse(((minDistCol-minDistSize)>0),  minDistSize, minDistCol) 
-x2[1:200, 401:601] <- minimumDistance3_3 
+DistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
+DistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
+x2[1:200, 401:601] <- ifelse(((DistCol-DistSize)>0),  DistSize, DistCol) 
 #x2 is now confidence proxy based on minimum distance to boundary in space
 x2 <- ((x2/(2/3))*100) #set it into 0-100 space
-
-#x2 is now a matrix of confidence values under the minimum distance model 
 
 # Data 
 colnames(x2) <- paste("Col", 1:601)
 rownames(x2) <- paste("Row", 1:601)
 
 # Transform the matrix in long format
-dfX <- melt(x2)
-colnames(dfX) <- c("x", "y", "value")
-dfX$x <- rev(dfX$x) #THIS ORDER ALSO NEEDS REVERSING - WHY?
-ggplot(dfX, aes(x = x, y = y, fill = value)) +
+dfX1 <- melt(x2)
+colnames(dfX1) <- c("x", "y", "value")
+dfX1$x <- rev(dfX1$x) #THIS ORDER ALSO NEEDS REVERSING - WHY?
+minmodel <- ggplot(dfX1, aes(x = x, y = y, fill = value)) +
   geom_tile() +
   scale_fill_gradient(low = "white", high = "red") +
   coord_fixed() +
+  ggtitle("Minimum Distance Model") +
+  labs(x='Stimulus Size', y = 'Color Gradient') +
   theme(axis.text.x=element_blank(), #remove x axis labels
         axis.ticks.x=element_blank(), #remove x axis ticks
         axis.text.y=element_blank(),  #remove y axis labels
-        axis.ticks.y=element_blank() ) #remove y axis ticks
+        axis.ticks.y=element_blank() ); minmodel #remove y axis ticks
 
-############### 3.2 Maximum Distance ###########################################
+############### 2.2 Maximum Distance ###########################################
 #• Maximum distance to bound (out of the two dimensions)
 x3 <- x1
 
+#we have to overwrite a few of the grid areas from x1 here:namely the 2 grid boxes as follows:  
+#from size 400-600, when color is above 0.66 (here the max distance is going to flip)
+DistCol <- abs((1/3) - y[1:200, 201:400]) #pick color here
+DistSize <- abs((1/3) - x[1:200, 201:400]) #pick size here
+x3[1:200, 201:400] <- ifelse(((DistCol-DistSize)<0), DistSize, DistCol)  
+
+#from size 600-800, when color is less than 0.66 distance based on color
+DistCol <- abs((1/3) - y[201:400, 401:601]) #pick color here
+DistSize <- abs((1/3) - x[201:400, 401:601]) #pick size here
+x3[201:400, 401:601] <- ifelse(((DistCol-DistSize)<0), DistSize, DistCol) 
+
 #the weird diagonal grid boxes are defined by either, 
 #grid1_1
-maxDistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
-maxDistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
-maximumDistance1_1 <- ifelse(((maxDistCol-maxDistSize)<0),  maxDistSize, maxDistCol) 
-x3[401:601, 1:200] <- maximumDistance1_1 
+DistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
+DistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
+x3[401:601, 1:200] <- pythagorean(DistCol,DistSize)
 
 #grid2_2
-maxDistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
-maxDistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
-maximumDistance2_2 <- ifelse(((maxDistCol-maxDistSize)<0),  maxDistSize, maxDistCol) 
-x3[201:400, 201:400] <- maximumDistance2_2 
+DistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
+DistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
+x3[201:400, 201:400] <- ifelse(((DistCol-DistSize)<0),  DistSize, DistCol)  
 
 #grid3_3 
-maxDistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
-maxDistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
-maximumDistance3_3 <- ifelse(((maxDistCol-maxDistSize)<0),  maxDistSize, maxDistCol) 
-x3[1:200, 401:601] <- maximumDistance3_3 
+DistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
+DistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
+x3[1:200, 401:601] <- ifelse(((DistCol-DistSize)<0), DistSize, DistCol)
 #x3 is now confidence proxy based on minimum distance to boundary in space
 x3 <- ((x3/(2/3))*100) #set it into 0-100 space
 
@@ -361,39 +264,49 @@ rownames(x3) <- paste("Row", 1:601)
 dfX2 <- melt(x3)
 colnames(dfX2) <- c("x", "y", "value")
 dfX2$x <- rev(dfX2$x) #THIS ORDER ALSO NEEDS REVERSING 
-ggplot(dfX2, aes(x = x, y = y, fill = value)) +
+maxmodel <- ggplot(dfX2, aes(x = x, y = y, fill = value)) +
   geom_tile() +
   scale_fill_gradient(low = "white", high = "red") +
   coord_fixed() +
+  ggtitle("Maximum Distance Model") +
+  labs(x='Stimulus Size', y = 'Color Gradient') +
   theme(axis.text.x=element_blank(), #remove x axis labels
         axis.ticks.x=element_blank(), #remove x axis ticks
         axis.text.y=element_blank(),  #remove y axis labels
-        axis.ticks.y=element_blank() ) #remove y axis ticks
+        axis.ticks.y=element_blank() ); maxmodel #remove y axis ticks
 
-############### 3.3 Summed Distance ###########################################
+############### 2.3 Summed Distance ###########################################
 #• Summed distance to bound (along the two dimensions)
 x4 <- x1
+x4 <- ((x4/(4/3))*100) #set it into 0-100 space ###2/3?
+
+#we have to overwrite a few of the grid areas from x1 here: namely the 2 grid boxes as follows:  
+#from size 400-600, when color is above 0.66 (here the max distance is going to flip)
+DistCol <- abs((1/3) - y[1:200, 201:400]) #pick color here
+DistSize <- abs((1/3) - x[1:200, 201:400]) #pick size here
+x4[1:200, 201:400] <- (((DistCol + DistSize)/(4/3))*100) #set it into 0-100 space
+
+#from size 600-800, when color is less than 0.66 distance based on color
+DistCol <- abs((1/3) - y[201:400, 401:601]) #pick color here
+DistSize <- abs((1/3) - x[201:400, 401:601]) #pick size here
+x4[201:400, 401:601] <- (((DistCol + DistSize)/(4/3))*100)
 
 #the weird diagonal grid boxes are defined by either, 
 #grid1_1
-sumDistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
-sumDistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
-sumDistance1_1 <- sumDistCol + sumDistSize 
-x4[401:601, 1:200] <- sumDistance1_1 
+DistCol <- abs((1/3) - y[401:601, 1:200]) #pick color here
+DistSize <- abs((1/3) - x[401:601, 1:200]) #pick size here
+x4[401:601, 1:200] <- (((pythagorean(DistCol,DistSize))/(4/3))*100) ##2/3??
 
 #grid2_2
-sumDistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
-sumDistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
-sumDistance2_2 <- sumDistCol + sumDistSize
-x4[201:400, 201:400] <- sumDistance2_2 
+DistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
+DistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
+x4[201:400, 201:400] <- (((DistCol + DistSize)/(4/3))*100)
 
 #grid3_3 
-sumDistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
-sumDistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
-sumDistance3_3 <- sumDistCol + sumDistSize 
-x4[1:200, 401:601] <- sumDistance3_3 
+DistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
+DistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
+x4[1:200, 401:601] <- (((DistCol + DistSize)/(4/3))*100)
 #x4 is now confidence proxy based on minimum distance to boundary in space
-x4 <- ((x4/(2/3))*100) #set it into 0-100 space
 
 # Data 
 colnames(x4) <- paste("Col", 1:601)
@@ -403,11 +316,160 @@ rownames(x4) <- paste("Row", 1:601)
 dfX3 <- melt(x4)
 colnames(dfX3) <- c("x", "y", "value")
 dfX3$x <- rev(dfX3$x) #THIS ORDER ALSO NEEDS REVERSING 
-ggplot(dfX3, aes(x = x, y = y, fill = value)) +
+summodel <- ggplot(dfX3, aes(x = x, y = y, fill = value)) +
   geom_tile() +
   scale_fill_gradient(low = "white", high = "red") +
   coord_fixed() +
+  ggtitle("Summed Distance Model") +
+  labs(x='Stimulus Size', y = 'Color Gradient') +
   theme(axis.text.x=element_blank(), #remove x axis labels
         axis.ticks.x=element_blank(), #remove x axis ticks
         axis.text.y=element_blank(),  #remove y axis labels
-        axis.ticks.y=element_blank() ) #remove y axis ticks
+        axis.ticks.y=element_blank() ); summodel #remove y axis ticks
+
+patch <- minmodel + maxmodel + summodel; patch 
+
+rm(dfX1, dfX2, dfX3, DistCol, DistSize, x, y, x1, minmodel, maxmodel, summodel)
+
+############### 3.0 Comparing confidence to the models ########################
+modelData <- confidence[c("PID", "distribution_name","grid_box", "confidence", "zConf","fish_color", "fish_size")]
+
+#lets put size in the same space as color 0-1 space
+modelData$fish_size <- ((modelData$fish_size-200)/600)
+
+# check which are the most relevant dimensions for which area of the category space
+# this is not true for every model but worth starting here
+modelData <- modelData %>%
+  mutate(relevantBoundary = case_when(
+    grid_box == "box3_1" ~ 1, #"size",
+    grid_box == "box3_2" ~ 1, #"size",
+    grid_box == "box2_1" ~ 1, #"size",
+    grid_box == "box1_3" ~ 2, #"color",
+    grid_box == "box2_3" ~ 2, #"color",
+    grid_box == "box1_2" ~ 2, #"color",
+    TRUE ~ 3 #both potentially or trial dependent ~ will have to check trial by trial
+  )) 
+
+#Let's first consider
+#• Minimum distance to bound (out of the two dimensions)
+#if confidence is scaled relative to the minimum distance to the bound out of the two dimension
+#is the minimum distance reduces  to 0 then confidence is 0, if it is maximal then confidence is 1
+
+modelData <- modelData %>% 
+  mutate(minimumDistance = case_when (
+    relevantBoundary == 1 ~ abs((1/3) - fish_size),
+    relevantBoundary == 2 ~ abs((1/3) - fish_color),
+  )) %>% 
+  #now let's look at the border cases 
+  mutate(minDistCol = case_when (
+    grid_box == "box1_1" ~ abs((1/3) - fish_color),
+    grid_box == "box2_2" ~ abs((1/3) - fish_color),
+    grid_box == "box3_3" ~ abs((1/3) - fish_color)
+  )) %>%
+  mutate(minDistSize = case_when (
+    grid_box == "box1_1" ~ abs((1/3) - fish_size),
+    grid_box == "box2_2" ~ abs((1/3) - fish_size),
+    grid_box == "box3_3" ~ abs((1/3) - fish_size)
+  )) %>% 
+  mutate(minimumDistance = case_when (
+    relevantBoundary == 3 & (minDistCol-minDistSize)> 0 ~ minDistSize,
+    relevantBoundary == 3 & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    TRUE ~ minimumDistance #minimum distance is scaled from 0-0.66
+  )) %>% 
+  mutate(minimumDistance = case_when ( #overwrite for grid_box1_1 
+    relevantBoundary == 3 & grid_box == "box1_1" ~ pythagorean(minDistCol,minDistSize),
+    TRUE ~ minimumDistance
+  )) %>%
+  mutate(minimumDistance = ((minimumDistance/(2/3))*100))
+
+modelData <- subset(modelData, select = -c(minDistCol, minDistSize))
+
+#• Maximum distance to bound (out of the two dimensions)
+modelData <- modelData %>% 
+  mutate(maximumDistance = case_when (
+    relevantBoundary == 1 ~ abs((1/3) - fish_size),
+    relevantBoundary == 2 ~ abs((1/3) - fish_color),
+  )) %>% #now let's look at the border cases 
+  mutate(maxDistCol = case_when (
+    grid_box == "box1_1" ~ abs((1/3) - fish_color),
+    grid_box == "box2_2" ~ abs((1/3) - fish_color),
+    grid_box == "box3_3" ~ abs((1/3) - fish_color),
+    #overwrite 2 grid boxes that need reconstrual here
+    grid_box == "box2_3" ~ abs((1/3) - fish_color),
+    grid_box == "box3_2" ~ abs((1/3) - fish_color)
+  )) %>%
+  mutate(maxDistSize = case_when (
+    grid_box == "box1_1" ~ abs((1/3) - fish_size),
+    grid_box == "box2_2" ~ abs((1/3) - fish_size),
+    grid_box == "box3_3" ~ abs((1/3) - fish_size),
+    #overwrite 2 grid boxes that need reconstrual here
+    grid_box == "box2_3" ~ abs((1/3) - fish_size),
+    grid_box == "box3_2" ~ abs((1/3) - fish_size)
+  )) %>% 
+  mutate(maximumDistance = case_when (
+    relevantBoundary == 3 & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
+    relevantBoundary == 3 & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
+    #overwrite those 2 grid boxes explictly here
+    grid_box == "box2_3" & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
+    grid_box == "box3_2" & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
+    grid_box == "box2_3" & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
+    grid_box == "box3_2" & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
+    TRUE ~ maximumDistance 
+  ))  %>% 
+  mutate(maximumDistance = case_when (#overwrite grid_box1_1 in a different way 
+    relevantBoundary == 3 & grid_box == "box1_1" ~ pythagorean(maxDistCol,maxDistSize),
+    TRUE ~ maximumDistance
+  ))%>%
+  mutate(maximumDistance = ((maximumDistance/(2/3))*100))
+
+modelData <- subset(modelData, select = -c(maxDistCol, maxDistSize))
+
+#• Summed distance to bound (along the two dimensions)
+modelData <- modelData %>% 
+  mutate(summedDistance = case_when (
+    relevantBoundary == 1 ~ abs((1/3) - fish_size),
+    relevantBoundary == 2 ~ abs((1/3) - fish_color),
+  )) %>% #now let's look at the border cases 
+  mutate(sumDistCol = case_when (
+    grid_box == "box1_1" ~ abs((1/3) - fish_color),
+    grid_box == "box2_2" ~ abs((1/3) - fish_color),
+    grid_box == "box3_3" ~ abs((1/3) - fish_color),
+    #overwrite 2 grid boxes that need reconstrual here
+    grid_box == "box2_3" ~ abs((1/3) - fish_color),
+    grid_box == "box3_2" ~ abs((1/3) - fish_color)
+  )) %>%
+  mutate(sumDistSize = case_when (
+    grid_box == "box1_1" ~ abs((1/3) - fish_size),
+    grid_box == "box2_2" ~ abs((1/3) - fish_size),
+    grid_box == "box3_3" ~ abs((1/3) - fish_size),
+    #overwrite 2 grid boxes that need reconstrual here
+    grid_box == "box2_3" ~ abs((1/3) - fish_size),
+    grid_box == "box3_2" ~ abs((1/3) - fish_size)
+  )) %>% 
+  mutate(summedDistance = case_when (
+    relevantBoundary == 3  ~ sumDistCol + sumDistSize,
+    #overwrite those 2 grid boxes explicitly here
+    grid_box == "box2_3" ~ sumDistCol + sumDistSize,
+    grid_box == "box3_2" ~ sumDistCol + sumDistSize,
+    TRUE ~ summedDistance 
+  )) %>%
+  mutate(summedDistance = case_when (#overwrite grid_box1_1 in a different way 
+    grid_box == "box1_1" ~ pythagorean(sumDistCol,sumDistSize),
+    TRUE ~ summedDistance
+  ))%>%
+  #mutate(summedDistance = case_when(
+    #grid_box == "box2_3" ~ (summedDistance/(4/3))*100,
+    #grid_box == "box2_2" ~ (summedDistance/(4/3))*100,
+    #grid_box == "box3_3" ~ (summedDistance/(4/3))*100,
+    #grid_box == "box3_2" ~ (summedDistance/(4/3))*100,
+    #TRUE ~ (summedDistance/(2/3))*100)) #NO WAIT MAYBE THIS SHOULD ALL BE 4/3 ratiod? 
+  mutate(summedDistance = (summedDistance/(4/3))*100) #put into the 4/3 space again
+
+modelData <- subset(modelData, select = -c(sumDistCol, sumDistSize))
+
+
+cor.test(modelData$confidence, modelData$minimumDistance)
+cor.test(modelData$confidence, modelData$maximumDistance)
+cor.test(modelData$confidence, modelData$summedDistance)
+
+###############################################################################
