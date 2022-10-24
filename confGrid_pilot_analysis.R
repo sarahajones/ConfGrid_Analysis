@@ -710,6 +710,8 @@ scale_summodel <- ggplot(dfX10, aes(x = x, y = y, fill = value)) +
 
 scaleMixPlot <- scale_minmodel + scale_maxmodel + scale_summodel; scaleMixPlot
 
+scaledMixed <- plotABC / scaleMixPlot; scaledMixed
+
 combiScaleMix <- combiScaled / scaleMixPlot; combiScaleMix
 
 
@@ -1050,9 +1052,17 @@ anovaData <- anovaData %>%
 
 anovaData$model <- as.factor(anovaData$model)
 
+#oneway ANOVA
+rValueAOV <- aov(Rvalue ~ model, data = anovaData)
+summary(rValueAOV)
+#postHoc <- TukeyHSD(rValueAOV); postHoc
+#check the pairwise comparisons
+int_comp <- emmeans(rValueAOV, ~ model)
+pairs(int_comp,adjust="none")
+
+#withinPID?
 rValueAOV <- aov_ez(id="PID", dv="Rvalue", data=anovaData, within = c("model"))
 rValueAOV
-
 #check the pairwise comparisons
 int_comp <- emmeans(rValueAOV, ~ model)
 pairs(int_comp,adjust="none")
