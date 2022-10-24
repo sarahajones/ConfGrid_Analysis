@@ -1075,9 +1075,9 @@ rm(minSig, maxSig, sumSig, minModel, maxModel, sumModel, i, dataX, index, correl
   scale_minModel,  scale_sumModel, scale_minSig, scale_maxSig,
   scale_sumSig, scale_scaleModel, scale_scaleSig, rValues)
 
-############### 3.1  Using Likelihoods to assess fit ##########################
+############### 3.1 Using Likelihoods to assess fit ##########################
 
-#t tests are getting out of hand - likelihood comparisons might be the way to go. 
+#likelihood comparisons might be the way to go. 
 #the likelihood of it being from model X given the data Y 
 
 
@@ -1157,10 +1157,69 @@ ggplot(data=confidence, aes(fish_size)) +
   facet_wrap( ~ PID)
 
 ############### 4.1 Adjust response bounds - constrained spaced ######################
-
 # we want to make sure that each "quadrant" of the subject bound 
 # contains some data = so that the don't fit to an empty quadrant space 
 # (will constrain locations for response bound itself)
 
+#now lets find the response based boundary per participant
+countVerticalBlue <- matrix(data = NA, nrow = 100, ncol = 100)
+countHorizontalRed <- matrix(data = NA, nrow = 100, ncol = 100)
+countHorizontalBlue <- matrix(data = NA, nrow = 100, ncol = 100)
+responseBound <- matrix(data = NA, nrow = length(PID), ncol = 2)
 
+for(i in PID){ #for each pp
+  data <- subset(responseData, PID == i)
+  for(val in colorVector){
+    j <- match(c(val), colorVector) #set the horizontal value and index
+    for(value in sizeVector){
+      k <- match(c(value),sizeVector) #set the vertical value and index
+      
+      #set size as the rows and color as the column - so each column holds a size constant
+      if(sum(data$fish_size < value) > 3)(
+      countVerticalBlue[k,j] <- sum(data$fish_size < value & data$button == 1) 
+      ) else (countVerticalBlue[k,j] <- NA)
+      if(sum(data$fish_color > val & data$fish_size > value) > 3)(
+        countHorizontalRed[k,j] <- sum(data$fish_color > val & data$fish_size > value & data$button == 0)
+        ) else (countHorizontalRed[k,j] <- NA)
+      if(sum(data$fish_color < val & data$fish_size > value) > 3)(
+        countHorizontalBlue [k,j] <- sum(data$fish_color < val & data$fish_size > value & data$button == 1)
+      ) else (countHorizontalBlue[k,j] <- NA)
+    }
+  }
+  totalWrong <- countVerticalBlue + countHorizontalRed + countHorizontalBlue
+  
+  indices <- which(totalWrong == min(totalWrong, na.rm = TRUE), arr.ind = TRUE) #find the minimum value index
+  
+  colors <- unique(indices[,2])
+  sizes <- unique(indices[,1])
+  
+  if (length(colors) == 1){
+    responseBound[i, 1] <- colorVector[colors[1]]
+  } else if(length(colors) %% 2 != 0){
+    responseBound[i, 1] <- colorVector[median(colors)]
+  } else if(length(colors)%% 2 == 0 & length(colors) < length(indices[,2])){
+    responseBound[i,1] <- colorVector[getmode(indices[,2])]
+  } else {responseBound[i,1] <- colorVector[mean(colors)]} 
+  
+  if (length(sizes) == 1){
+    responseBound[i, 2] <- sizeVector[sizes[1]]
+  } else if(length(sizes) %% 2 != 0){
+    responseBound[i, 2] <- sizeVector[median(sizes)]
+  } else if(length(sizes)%% 2 == 0 & length(sizes) < length(indices[,1])){
+    responseBound[i,2] <- sizeVector[getmode(indices[,1])]}
+  else {responseBound[i,2] <- sizeVector[mean(sizes)]} 
+}
+responseBound <- as.data.frame(responseBound)
+responseBound$PID <- PID
+responseBound$VerticalSizeConst <- responseBound$V2
+responseBound$HorizontalColorConst <- responseBound$V1
+responseBound <- responseBound %>% select(-V1, -V2)
+confidence <- merge(confidence, responseBound, by = c("PID"))
+
+#plot these boundaries to sanity check them 
+ggplot(data=confidence, aes(fish_size)) + 
+  geom_point(mapping = aes(x = fish_size, y = fish_color, color = button)) +
+  geom_vline(aes(xintercept = VerticalSizeConst)) +
+  geom_hline(aes(yintercept = HorizontalColorConst)) +
+  facet_wrap( ~ PID)
 ###############################################################################
