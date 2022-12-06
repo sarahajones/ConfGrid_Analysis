@@ -1,3 +1,4 @@
+################################################################################
 ############### Confidence and Categorisation: ConfGrid ########################
 #Study 4 - Data Analysis Script 
 
@@ -14,14 +15,16 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 list.of.packages <- c("tidyverse",
                       "ggplot2",
                       "patchwork",
+                      "latticeExtra", #check this
                       "reshape",
                       "readr",
                       "plyr",
                       "dplyr",
                       "corrgram",
                       "Hmisc", 
+                      "ggpubr",
                       "afex", #running ANOVA
-                      "emmeans" #pairwise ttests
+                      "emmeans"#pairwise ttests
                       )
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])] #check for any uninstalled packages
 if(length(new.packages)) install.packages(new.packages) #install any missing packages (requires internet access)
@@ -95,6 +98,7 @@ confidence$fish_color <- 1- confidence$fish_color #flip color
 accuracy <- confidence %>% 
   group_by(PID) %>%
   dplyr::summarise(mean = mean(as.numeric(correct)))
+summary(accuracy$mean)
 
 PIDwiseAccuracy <- ggplot(data = accuracy) +
   geom_point(mapping = aes(x = PID, y = mean)) +
@@ -110,12 +114,30 @@ PIDwiseAccuracy <- ggplot(data = accuracy) +
   labs(title="Participant Accuracy", x="PID", y="Accuracy") + 
   xlim(1, numParticipants)+ ylim(0, 1); PIDwiseAccuracy
 
-mean(accuracy$mean)
+#confidence and accuracy 
+accuracy <- confidence %>% 
+  group_by(PID, correct) %>%
+  dplyr::summarise(mean = mean(as.numeric(confidence)))
+
+bxp <- ggboxplot(
+  accuracy, x = "correct", y = "mean", 
+  ylab = "Reaction Time (ms)", xlab = "Mean confidence - split by accuracy", add = "jitter"
+); bxp
+inacc <- subset(accuracy, correct == 0)
+acc <- subset(accuracy, correct == 1)
+t.test(acc$mean, inacc$mean, paired = TRUE, alternative = "two.sided")
 
 #how are people using the confidence scale? 
 ggplot(data = confidence, aes(confidence))+
   geom_bar() +
   facet_wrap(~PID)
+
+PIDwiseUniqueCount <- confidence %>%
+  group_by(PID) %>%
+  dplyr::summarise(uniqueCount = length(unique(confidence)))
+cutoffLow <- 5
+excludeConf <- subset(PIDwiseUniqueCount, uniqueCount < cutoffLow) #nobody here used less than 3 values
+
 
 ggplot(data=confidence, aes(fish_size)) + #the trials worked - labelling was correct
   geom_point(mapping = aes(x = fish_size, y = fish_color, color = distribution_name))
@@ -204,6 +226,189 @@ rm(meanConf, PIDConf, sdConf, x, z, zConf, zConfCol, i, j,
 # split each grid space into 4 - so space now has 36 grid boxes,
 # take average confidence in each space 
 # apply a color and a smoothing function as appropriate to match red plots
+
+confidence_smooth <- confidence
+confidence_smooth$fish_size <- (confidence_smooth$fish_size-200)/600
+confidence_smooth <-  confidence_smooth %>%
+  mutate(miniGrid = case_when(
+    fish_size <= 1/6 & fish_color <= 1/6  ~ "mini_1_1_1",
+    fish_size > 1/6 & fish_size <= 2/6 & fish_color <= 1/6  ~ "mini_1_1_2",
+    fish_size <= 1/6 & fish_color <= 2/6 & fish_color > 1/6 ~ "mini_1_1_3",
+    fish_size > 1/6 & fish_size <= 2/6 & fish_color <= 2/6 & fish_color > 1/6  ~ "mini_1_1_4",
+    fish_size <= 1/6 & fish_color <= 3/6 & fish_color > 2/6  ~ "mini_1_2_1",
+    fish_size > 1/6 & fish_size <= 2/6 & fish_color <= 3/6 & fish_color > 2/6  ~ "mini_1_2_2",
+    fish_size <= 1/6 & fish_color <= 4/6 & fish_color > 3/6  ~ "mini_1_2_3",
+    fish_size > 1/6 & fish_size <= 2/6 & fish_color <= 4/6 & fish_color > 3/6  ~ "mini_1_2_4",
+    fish_size <= 1/6 & fish_color <= 5/6 & fish_color > 4/6  ~ "mini_1_3_1",
+    fish_size > 1/6 & fish_size <= 2/6 & fish_color <= 5/6 & fish_color > 4/6  ~ "mini_1_3_2",
+    fish_size <= 1/6 & fish_color <= 6/6 & fish_color > 5/6  ~ "mini_1_3_3",
+    fish_size > 1/6 & fish_size <= 2/6 & fish_color <= 6/6 & fish_color > 5/6  ~ "mini_1_3_4",
+     
+    fish_size <= 3/6 & fish_size > 2/6 & fish_color <= 1/6 ~ "mini_2_1_1",
+    fish_size > 3/6 & fish_size <= 4/6 & fish_color <= 1/6  ~ "mini_2_1_2",
+    fish_size <= 3/6 & fish_size > 2/6 & fish_color <= 2/6 & fish_color > 1/6  ~ "mini_2_1_3",
+    fish_size > 3/6 & fish_size <= 4/6 & fish_color <= 2/6 & fish_color > 1/6~ "mini_2_1_4",
+    fish_size <= 3/6 & fish_size > 2/6 & fish_color <= 3/6 & fish_color > 2/6  ~ "mini_2_2_1",
+    fish_size > 3/6 & fish_size <= 4/6 & fish_color <= 3/6 & fish_color > 2/6 ~ "mini_2_2_2",
+    fish_size <= 3/6 & fish_size > 2/6 & fish_color <= 4/6 & fish_color > 3/6  ~ "mini_2_2_3",
+    fish_size > 3/6 & fish_size <= 4/6 & fish_color <= 4/6 & fish_color > 3/6 ~ "mini_2_2_4",
+    fish_size <= 3/6 & fish_size > 2/6 & fish_color <= 5/6 & fish_color > 4/6 ~ "mini_2_3_1",
+    fish_size > 3/6 & fish_size <= 4/6 & fish_color <= 5/6 & fish_color > 4/6 ~ "mini_2_3_2",
+    fish_size <= 3/6 & fish_size > 2/6 & fish_color <= 6/6 & fish_color > 5/6  ~ "mini_2_3_3",
+    fish_size > 3/6 & fish_size <= 4/6 & fish_color <= 6/6 & fish_color > 5/6 ~ "mini_2_3_4",
+     
+    fish_size <= 5/6 & fish_size > 4/6 & fish_color <= 1/6 ~ "mini_3_1_1",
+    fish_size > 5/6 & fish_size <= 6/6 & fish_color <= 1/6  ~ "mini_3_1_2",
+    fish_size <= 5/6 & fish_size > 4/6 & fish_color <= 2/6 & fish_color > 1/6  ~ "mini_3_1_3",
+    fish_size > 5/6 & fish_size <= 6/6 & fish_color <= 2/6 & fish_color > 1/6~ "mini_3_1_4",
+    fish_size <= 5/6 & fish_size > 4/6 & fish_color <= 3/6 & fish_color > 2/6  ~ "mini_3_2_1",
+    fish_size > 5/6 & fish_size <= 6/6 & fish_color <= 3/6 & fish_color > 2/6 ~ "mini_3_2_2",
+    fish_size <= 5/6 & fish_size > 4/6 & fish_color <= 4/6 & fish_color > 3/6  ~ "mini_3_2_3",
+    fish_size > 5/6 & fish_size <= 6/6 & fish_color <= 4/6 & fish_color > 3/6 ~ "mini_3_2_4",
+    fish_size <= 5/6 & fish_size > 4/6 & fish_color <= 5/6 & fish_color > 4/6 ~ "mini_3_3_1",
+    fish_size > 5/6 & fish_size <= 6/6 & fish_color <= 5/6 & fish_color > 4/6 ~ "mini_3_3_2",
+    fish_size <= 5/6 & fish_size > 4/6 & fish_color <= 6/6 & fish_color > 5/6  ~ "mini_3_3_3",
+    fish_size > 5/6 & fish_size <= 6/6 & fish_color <= 6/6 & fish_color > 5/6 ~ "mini_3_3_4"
+  )) 
+
+PID <- c(1:numParticipants)
+minis <- c("mini_1_1_1", "mini_1_1_2", "mini_1_1_3", "mini_1_1_4",
+           "mini_1_2_1", "mini_1_2_2", "mini_1_2_3", "mini_1_2_4",
+           "mini_1_3_1", "mini_1_3_2", "mini_1_3_3", "mini_1_3_4",
+           
+           "mini_2_1_1", "mini_2_1_2", "mini_2_1_3", "mini_2_1_4",
+           "mini_2_2_1", "mini_2_2_2", "mini_2_2_3", "mini_2_2_4",
+           "mini_2_3_1", "mini_2_3_2", "mini_2_3_3", "mini_2_3_4",
+           
+           "mini_3_1_1", "mini_3_1_2", "mini_3_1_3", "mini_3_1_4",
+           "mini_3_2_1", "mini_3_2_2", "mini_3_2_3", "mini_3_2_4", 
+           "mini_3_3_1", "mini_3_3_2", "mini_3_3_3", "mini_3_3_4")
+
+confidence_smooth$smoothConf <- NA_real_
+confidence_smooth$smoothConfZ <- NA_real_
+confidence_smooth$smoothConfsd <- NA_real_
+confidence_smooth <- subset(confidence_smooth, !is.na(confidence))
+for(i in PID) {
+  for(j in minis){
+    mask <- confidence_smooth$PID == i & confidence_smooth$miniGrid == j
+    confidence_smooth$smoothConf[mask] <- mean(confidence_smooth$confidence[mask])
+    confidence_smooth$smoothConfsd[mask] <- sd(confidence_smooth$confidence[mask])
+    confidence_smooth$smoothConfZ[mask] <- (confidence_smooth$confidence[mask] - confidence_smooth$smoothConf[mask])/confidence_smooth$smoothConfsd[mask]
+  }
+}  
+confidence_smooth$smoothConfZ <- as.numeric(confidence_smooth$smoothConfZ)
+
+#set the x and y coordinates of the miniGrids
+confidence_smooth <- confidence_smooth %>%
+  mutate(y = case_when(
+    miniGrid == "mini_1_1_1" ~ 1, 
+    miniGrid == "mini_1_1_2" ~ 1, 
+    miniGrid == "mini_1_1_3" ~ 2, 
+    miniGrid == "mini_1_1_4" ~ 2,
+    miniGrid == "mini_1_2_1" ~ 3,
+    miniGrid == "mini_1_2_2" ~ 3,
+    miniGrid == "mini_1_2_3" ~ 4,
+    miniGrid == "mini_1_2_4" ~ 4,
+    miniGrid == "mini_1_3_1" ~ 5,
+    miniGrid == "mini_1_3_2" ~ 5,
+    miniGrid == "mini_1_3_3" ~ 6,
+    miniGrid == "mini_1_3_4" ~ 6,
+       
+    miniGrid == "mini_2_1_1" ~ 1, 
+    miniGrid == "mini_2_1_2" ~ 1, 
+    miniGrid == "mini_2_1_3" ~ 2, 
+    miniGrid == "mini_2_1_4" ~ 2,
+    miniGrid == "mini_2_2_1" ~ 3,
+    miniGrid == "mini_2_2_2" ~ 3,
+    miniGrid == "mini_2_2_3" ~ 4,
+    miniGrid == "mini_2_2_4" ~ 4,
+    miniGrid == "mini_2_3_1" ~ 5,
+    miniGrid == "mini_2_3_2" ~ 5,
+    miniGrid == "mini_2_3_3" ~ 6,
+    miniGrid == "mini_2_3_4" ~ 6,
+    
+    miniGrid == "mini_3_1_1" ~ 1, 
+    miniGrid == "mini_3_1_2" ~ 1, 
+    miniGrid == "mini_3_1_3" ~ 2, 
+    miniGrid == "mini_3_1_4" ~ 2,
+    miniGrid == "mini_3_2_1" ~ 3,
+    miniGrid == "mini_3_2_2" ~ 3,
+    miniGrid == "mini_3_2_3" ~ 4,
+    miniGrid == "mini_3_2_4" ~ 4,
+    miniGrid == "mini_3_3_1" ~ 5,
+    miniGrid == "mini_3_3_2" ~ 5,
+    miniGrid == "mini_3_3_3" ~ 6,
+    miniGrid == "mini_3_3_4" ~ 6,
+  )) %>%
+  mutate(x = case_when(
+    miniGrid == "mini_1_1_1" ~ 1, 
+    miniGrid == "mini_1_1_2" ~ 2, 
+    miniGrid == "mini_1_1_3" ~ 1, 
+    miniGrid == "mini_1_1_4" ~ 2,
+    miniGrid == "mini_1_2_1" ~ 1,
+    miniGrid == "mini_1_2_2" ~ 2,
+    miniGrid == "mini_1_2_3" ~ 1,
+    miniGrid == "mini_1_2_4" ~ 2,
+    miniGrid == "mini_1_3_1" ~ 1,
+    miniGrid == "mini_1_3_2" ~ 2,
+    miniGrid == "mini_1_3_3" ~ 1,
+    miniGrid == "mini_1_3_4" ~ 2,
+    
+    miniGrid == "mini_2_1_1" ~ 3, 
+    miniGrid == "mini_2_1_2" ~ 4, 
+    miniGrid == "mini_2_1_3" ~ 3, 
+    miniGrid == "mini_2_1_4" ~ 4,
+    miniGrid == "mini_2_2_1" ~ 3,
+    miniGrid == "mini_2_2_2" ~ 4,
+    miniGrid == "mini_2_2_3" ~ 3,
+    miniGrid == "mini_2_2_4" ~ 4,
+    miniGrid == "mini_2_3_1" ~ 3,
+    miniGrid == "mini_2_3_2" ~ 4,
+    miniGrid == "mini_2_3_3" ~ 3,
+    miniGrid == "mini_2_3_4" ~ 4,
+    
+    miniGrid == "mini_3_1_1" ~ 5, 
+    miniGrid == "mini_3_1_2" ~ 6, 
+    miniGrid == "mini_3_1_3" ~ 5, 
+    miniGrid == "mini_3_1_4" ~ 6,
+    miniGrid == "mini_3_2_1" ~ 5,
+    miniGrid == "mini_3_2_2" ~ 6,
+    miniGrid == "mini_3_2_3" ~ 5,
+    miniGrid == "mini_3_2_4" ~ 6,
+    miniGrid == "mini_3_3_1" ~ 5,
+    miniGrid == "mini_3_3_2" ~ 6,
+    miniGrid == "mini_3_3_3" ~ 5,
+    miniGrid == "mini_3_3_4" ~ 6,
+  ))
+
+#confidence_smooth1 <- subset(confidence_smooth, PID ==1)
+pal <- colorRampPalette(c("white", "red"))
+levelplot(smoothConf ~ x * y | PID, confidence_smooth,
+          layout=c(10,6), as.table = TRUE,
+          col.regions = pal(100),
+          panel = panel.levelplot.points, cex = 0
+) + 
+  layer_(panel.2dsmoother(..., n = 200))
+
+confidence_smooth2 <- subset(confidence_smooth, smoothConfZ < 1.75 & smoothConfZ > -1.75)
+levelplot(smoothConfZ ~ x * y | PID, confidence_smooth2,
+          layout=c(10,6), as.table = TRUE,
+          col.regions = pal(100),
+          panel = panel.levelplot.points, cex = 0
+) + 
+  layer_(panel.2dsmoother(..., n = 200))
+
+smoother <- ggplot(confidence_smooth, aes(x = x, y = y, fill = smoothConfZ)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  coord_fixed() +
+  ggtitle("Smooth Conf") +
+  labs(x='Stimulus Size', y = 'Color Gradient') +
+  theme(axis.text.x=element_blank(), #remove x axis labels
+        axis.ticks.x=element_blank(), #remove x axis ticks
+        axis.text.y=element_blank(),  #remove y axis labels
+        axis.ticks.y=element_blank() ) +
+  facet_wrap(~PID); smoother
 
 ############### 2.0 Grid simulations ###########################################
 #Simulate under these models 
@@ -530,7 +735,7 @@ plotB <- ggplot(confPlot, aes(x = x, y = y, fill = value)) +
 #switch to look at the O category and the related stimulus likelihood
 confA <- abs(1-confB) #hold this matrix in memory for later use
 confPlotA <- confPlot
-confPlotA$value <- 100- confPlotA$value
+confPlotA$value <- 100 - confPlotA$value
 
 plotA <- ggplot(confPlotA, aes(x = x, y = y, fill = value)) +
   geom_tile() +
@@ -546,20 +751,19 @@ plotA <- ggplot(confPlotA, aes(x = x, y = y, fill = value)) +
 plotAB <- plotA + plotB; plotAB
 
 #now combine the two scaled stimulus based 
-confC <- confA #set it all to the O space
-confC <- 1-confA
+confC <- 100 - ((confB/2)*100) #set it all to the O space
 #need to overwrite the L with the confB values 
-#grid 1_1 
-confC[401:601, 1:200] <- confB[401:601, 1:200]
-#grid 1_3 and 1_2 - where size less than 400 and color more than .33
-confC[1:400, 1:200] <- confB[1:400, 1:200]
+#grid 1_1,grid 1_3 and 1_2 - where size less than 400
+confC[1:601, 1:200] <- (confB[1:601, 1:200]/2)*100
 #grid boxes 2_1 and £_1 where size is 400-800 and color less than .33
-confC[401:601, 201:601] <- confB[401:601, 201:601]
+confC[401:601, 201:601] <- (confB[401:601, 201:601]/2)*100
 
 confPlotC <- melt(confC)
 colnames(confPlotC) <- c("x", "y", "value")
 confPlotC$x <- rev(confPlotC$x)
-confPlotC$value <- (confPlotC$value/2)*100
+#confPlotC$value <- (confPlotC$value/2)*100 #for B space no adjustment needed
+#confPlotC$value <- 100 - confPlotC$value #for A space, flip 
+
 plotC <- ggplot(confPlotC, aes(x = x, y = y, fill = value)) +
   geom_tile() +
   scale_fill_gradient(low = "white", high = "red") +
@@ -714,6 +918,7 @@ scaledMixed <- plotABC / scaleMixPlot; scaledMixed
 
 combiScaleMix <- combiScaled / scaleMixPlot; combiScaleMix
 
+combined <- combi_patch / scaleMixPlot; combined
 
 rm(confA, confB, confC, confPlot, confPlotA, confPlotC, dfX10, dfX8, dfX9, plotA, plotB, plotC, plotAB, plotABC, probBx, probBy,
    x10, x8, x9, x, y, scale_maxmodel, scale_minmodel, scale_summodel, scaleMixPlot, gridY_col, gridX_row, DistCol, DistSize)
@@ -765,24 +970,35 @@ modelData <- modelData %>%
     relevantBoundary == 1 ~ abs((1/3) - fish_size),
     relevantBoundary == 2 ~ abs((1/3) - fish_color),
   )) %>% 
-  #now let's look at the border cases 
+  #now let's look at the O category  
   mutate(minDistCol = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_color),
     grid_box == "box2_2" ~ abs((1/3) - fish_color),
-    grid_box == "box3_3" ~ abs((1/3) - fish_color)
+    grid_box == "box3_3" ~ abs((1/3) - fish_color),
+    grid_box == "box2_3" ~ abs((1/3) - fish_color),
+    grid_box == "box3_2" ~ abs((1/3) - fish_color),
+    grid_box == "box1_1" ~ abs((1/3) - fish_color),
   )) %>%
   mutate(minDistSize = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_size),
     grid_box == "box2_2" ~ abs((1/3) - fish_size),
-    grid_box == "box3_3" ~ abs((1/3) - fish_size)
+    grid_box == "box3_3" ~ abs((1/3) - fish_size),
+    grid_box == "box2_3" ~ abs((1/3) - fish_size),
+    grid_box == "box3_2" ~ abs((1/3) - fish_size),
+    grid_box == "box1_1" ~ abs((1/3) - fish_size)
   )) %>% 
   mutate(asym_minimumDistance = case_when (
+    #set diagonal cases
     relevantBoundary == 3 & (minDistCol-minDistSize)> 0 ~ minDistSize,
     relevantBoundary == 3 & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    relevantBoundary == 3 & (minDistCol-minDistSize) == 0 ~ minDistCol,
+    #set rest of O category space explicitly
+    grid_box == "box2_3" & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    grid_box == "box3_2" & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    grid_box == "box2_3" & (minDistCol-minDistSize)> 0 ~ minDistSize,
+    grid_box == "box3_2" & (minDistCol-minDistSize)> 0 ~ minDistSize,
     TRUE ~ asym_minimumDistance #minimum distance is scaled from 0-0.66
   )) %>% 
   mutate(asym_minimumDistance = case_when ( #overwrite for grid_box1_1 
-    relevantBoundary == 3 & grid_box == "box1_1" ~ pythagorean(minDistCol,minDistSize),
+    grid_box == "box1_1" ~ pythagorean(minDistCol,minDistSize),
     TRUE ~ asym_minimumDistance
   )) %>%
   mutate(asym_minimumDistance = ((asym_minimumDistance/(2/3))*100))
@@ -794,27 +1010,25 @@ modelData <- modelData %>%
   mutate(asym_maximumDistance = case_when (
     relevantBoundary == 1 ~ abs((1/3) - fish_size),
     relevantBoundary == 2 ~ abs((1/3) - fish_color),
-  )) %>% #now let's look at the border cases 
+  )) %>% #now let's look at the O category cases 
   mutate(maxDistCol = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_color),
     grid_box == "box2_2" ~ abs((1/3) - fish_color),
     grid_box == "box3_3" ~ abs((1/3) - fish_color),
-    #overwrite 2 grid boxes that need reconstrual here
     grid_box == "box2_3" ~ abs((1/3) - fish_color),
-    grid_box == "box3_2" ~ abs((1/3) - fish_color)
+    grid_box == "box3_2" ~ abs((1/3) - fish_color),
+    grid_box == "box1_1" ~ abs((1/3) - fish_color)
   )) %>%
   mutate(maxDistSize = case_when (
-    grid_box == "box1_1" ~ abs((1/3) - fish_size),
     grid_box == "box2_2" ~ abs((1/3) - fish_size),
     grid_box == "box3_3" ~ abs((1/3) - fish_size),
-    #overwrite 2 grid boxes that need reconstrual here
     grid_box == "box2_3" ~ abs((1/3) - fish_size),
-    grid_box == "box3_2" ~ abs((1/3) - fish_size)
+    grid_box == "box3_2" ~ abs((1/3) - fish_size),
+    grid_box == "box1_1" ~ abs((1/3) - fish_size)
   )) %>% 
   mutate(asym_maximumDistance = case_when (
     relevantBoundary == 3 & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
     relevantBoundary == 3 & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
-    #overwrite those 2 grid boxes explictly here
+    relevantBoundary == 3 & (maxDistCol-maxDistSize)== 0 ~ maxDistSize,
     grid_box == "box2_3" & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
     grid_box == "box3_2" & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
     grid_box == "box2_3" & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
@@ -822,7 +1036,7 @@ modelData <- modelData %>%
     TRUE ~ asym_maximumDistance 
   ))  %>% 
   mutate(asym_maximumDistance = case_when (#overwrite grid_box1_1 in a different way 
-    relevantBoundary == 3 & grid_box == "box1_1" ~ pythagorean(maxDistCol,maxDistSize),
+    grid_box == "box1_1" ~ pythagorean(maxDistCol,maxDistSize),
     TRUE ~ asym_maximumDistance
   ))%>%
   mutate(asym_maximumDistance = ((asym_maximumDistance/(2/3))*100))
@@ -834,12 +1048,11 @@ modelData <- modelData %>%
   mutate(asym_summedDistance = case_when (
     relevantBoundary == 1 ~ abs((1/3) - fish_size),
     relevantBoundary == 2 ~ abs((1/3) - fish_color),
-  )) %>% #now let's look at the border cases 
+  )) %>% #now let's look at the O category cases 
   mutate(sumDistCol = case_when (
     grid_box == "box1_1" ~ abs((1/3) - fish_color),
     grid_box == "box2_2" ~ abs((1/3) - fish_color),
     grid_box == "box3_3" ~ abs((1/3) - fish_color),
-    #overwrite 2 grid boxes that need reconstrual here
     grid_box == "box2_3" ~ abs((1/3) - fish_color),
     grid_box == "box3_2" ~ abs((1/3) - fish_color)
   )) %>%
@@ -847,15 +1060,13 @@ modelData <- modelData %>%
     grid_box == "box1_1" ~ abs((1/3) - fish_size),
     grid_box == "box2_2" ~ abs((1/3) - fish_size),
     grid_box == "box3_3" ~ abs((1/3) - fish_size),
-    #overwrite 2 grid boxes that need reconstrual here
     grid_box == "box2_3" ~ abs((1/3) - fish_size),
     grid_box == "box3_2" ~ abs((1/3) - fish_size)
   )) %>% 
   mutate(asym_summedDistance = case_when (
     relevantBoundary == 3  ~ sumDistCol + sumDistSize,
-    #overwrite those 2 grid boxes explicitly here
     grid_box == "box2_3" ~ sumDistCol + sumDistSize,
-    grid_box == "box3_2" ~ sumDistCol + sumDistSize,
+    grid_box == "box3_2"~ sumDistCol + sumDistSize,
     TRUE ~ asym_summedDistance 
   )) %>%
   mutate(asym_summedDistance = case_when (#overwrite grid_box1_1 in a different way 
@@ -873,36 +1084,32 @@ modelData <- subset(modelData, select = -c(sumDistCol, sumDistSize))
 
 #now consider the stimulus scaled models
 modelData <- modelData %>% 
-  mutate(scaled_minDistance = (((1- fish_size) + (1-fish_color))/2)
-  ) %>%
+  mutate(scaled_minDistance = (((1- fish_size) + (1-fish_color))/2)) %>%
   mutate(scaled_minDistance = case_when(
-    grid_box == "box2_2" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    grid_box == "box2_3" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    grid_box == "box3_2" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    grid_box == "box3_3" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    TRUE ~ scaled_minDistance
+    grid_box == "box2_2" ~ minimumDistance,
+    grid_box == "box2_3" ~ minimumDistance,
+    grid_box == "box3_2" ~ minimumDistance,
+    grid_box == "box3_3" ~ minimumDistance,
+    TRUE ~ scaled_minDistance*100
   )) %>%
-  mutate(scaled_minDistance = scaled_minDistance*100) %>%
   mutate(scaled_maxDistance = (((1- fish_size) + (1-fish_color))/2)
   ) %>%
   mutate(scaled_maxDistance = case_when(
-    grid_box == "box2_2" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    grid_box == "box2_3" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    grid_box == "box3_2" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    grid_box == "box3_3" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    TRUE ~ scaled_maxDistance
+    grid_box == "box2_2" ~ maximumDistance,
+    grid_box == "box2_3" ~ maximumDistance,
+    grid_box == "box3_2" ~ maximumDistance,
+    grid_box == "box3_3" ~ maximumDistance,
+    TRUE ~ scaled_maxDistance*100
   )) %>%
-  mutate(scaled_maxDistance = scaled_maxDistance*100) %>%
   mutate(scaled_sumDistance = (((1- fish_size) + (1-fish_color))/2)
   ) %>%
   mutate(scaled_sumDistance = case_when(
-    grid_box == "box2_2" ~ (DistCol + DistSize)/(4/3),
-    grid_box == "box2_3" ~ (DistCol + DistSize)/(4/3),
-    grid_box == "box3_2" ~ (DistCol + DistSize)/(4/3),
-    grid_box == "box3_3" ~ (DistCol + DistSize)/(4/3),
-    TRUE ~ scaled_sumDistance
+    grid_box == "box2_2" ~ summedDistance,
+    grid_box == "box2_3" ~ summedDistance,
+    grid_box == "box3_2" ~ summedDistance,
+    grid_box == "box3_3" ~ summedDistance,
+    TRUE ~ scaled_sumDistance*100
   )) %>%
-  mutate(scaled_sumDistance = scaled_sumDistance*100) %>%
   mutate(scaled_scaled = (((1- fish_size) + (1-fish_color))/2)
   ) %>%
   mutate(scaled_scaled = case_when(
@@ -913,11 +1120,13 @@ modelData <- modelData %>%
     TRUE ~ scaled_scaled
   )) %>%
   mutate(scaled_scaled = scaled_scaled*100)
+
+modelData$reverseScale <- 100 - modelData$scaled_scaled
   
 ############### 3.1 Anova on second order model values ########################
-# run correlation within each individual for the 10 models 
-pValue <- matrix(data = NA, nrow = numParticipants, ncol = 10)
-rValue <- matrix(data = NA, nrow = numParticipants, ncol = 10)
+# run correlation within each individual for the 9 models 
+pValue <- matrix(data = NA, nrow = numParticipants, ncol = 11)
+rValue <- matrix(data = NA, nrow = numParticipants, ncol = 11)
 PID <- c(1:numParticipants)
 for(i in PID){
   dataX <- subset(modelData, PID == i)
@@ -925,27 +1134,30 @@ for(i in PID){
                    "minimumDistance","maximumDistance", "summedDistance", 
                    "asym_minimumDistance", "asym_maximumDistance", "asym_summedDistance",
                    "scaled_minDistance", "scaled_maxDistance", "scaled_sumDistance",
-                   "scaled_scaled")]
+                   "scaled_scaled", "reverseScale")]
   correlations <- rcorr(as.matrix(dataX))
-  pValue[i,] <- correlations$P[1,2:11]
-  rValue[i,] <- correlations$r[1,2:11]
+  pValue[i,] <- correlations$P[1,2:12]
+  rValue[i,] <- correlations$r[1,2:12]
 }
 
 #check which of these correlations are significant
 sigCorrs <- ifelse((pValue<0.05),  rValue, NA) #just highlights what corrs are significant
+sigCorrs <- ifelse(sigCorrs > 0, sigCorrs, NA)
 
-minSig <- numParticipants - sum(is.na(sigCorrs[,1])) #26/58 sig corr for min model --- marginally highest num here
+minSig <- numParticipants - sum(is.na(sigCorrs[,1])) #25/58 sig corr for min model --- marginally highest num here
 maxSig <- numParticipants - sum(is.na(sigCorrs[,2])) #16/58 sig corr for max model
-sumSig <- numParticipants - sum(is.na(sigCorrs[,3])) #24/58 sig for summed model 
+sumSig <- numParticipants - sum(is.na(sigCorrs[,3])) #23/58 sig for summed model 
 
-asym_minSig <- numParticipants - sum(is.na(sigCorrs[,4])) #12/58 sig corr for asym_min model
-asym_maxSig <- numParticipants - sum(is.na(sigCorrs[,5])) #16/58 sig corr for asym_max model
+asym_minSig <- numParticipants - sum(is.na(sigCorrs[,4])) #19/58 sig corr for asym_min model
+asym_maxSig <- numParticipants - sum(is.na(sigCorrs[,5])) #15/58 sig corr for asym_max model
 asym_sumSig <- numParticipants - sum(is.na(sigCorrs[,6])) #19/58 sig for asym_summed model 
 
-scale_minSig <- numParticipants - sum(is.na(sigCorrs[,7])) #24/58
-scale_maxSig <- numParticipants - sum(is.na(sigCorrs[,8])) #26/58
+scale_minSig <- numParticipants - sum(is.na(sigCorrs[,7])) #25/58
+scale_maxSig <- numParticipants - sum(is.na(sigCorrs[,8])) #24/58
 scale_sumSig <- numParticipants - sum(is.na(sigCorrs[,9])) #28/58
+
 scale_scaleSig<- numParticipants - sum(is.na(sigCorrs[,10])) #24/58
+rev_scaleSig <- numParticipants - sum(is.na(sigCorrs[,11])) #0 (same corr as scale but neg) 
 
 #identify the largest correlation for each pp
 highest <- matrix(data = NA, nrow = numParticipants, ncol = 10)
@@ -956,17 +1168,17 @@ for(i in PID){
   } #these are the strongest within individual correlations (not necessarily sig corrs)
 
 minModel <- numParticipants - sum(is.na(highest[,1])) #6/58 show strongest corr for min model
-maxModel <- numParticipants - sum(is.na(highest[,2])) #2/58 show strongest corr for max model
-sumModel <- numParticipants - sum(is.na(highest[,3])) #7/58 show strongest corr for summed model
+maxModel <- numParticipants - sum(is.na(highest[,2])) #3/58 show strongest corr for max model
+sumModel <- numParticipants - sum(is.na(highest[,3])) #6/58 show strongest corr for summed model
 
-asym_minModel <- numParticipants - sum(is.na(highest[,4])) #1/58 show strongest corr for min model
+asym_minModel <- numParticipants - sum(is.na(highest[,4])) #3/58 show strongest corr for min model
 asym_maxModel <- numParticipants - sum(is.na(highest[,5])) #2/58 show strongest corr for max model
-asym_sumModel <- numParticipants - sum(is.na(highest[,6])) #6/58 show strongest corr for summed model
+asym_sumModel <- numParticipants - sum(is.na(highest[,6])) #4/58 show strongest corr for summed model
 
 scale_minModel <- numParticipants - sum(is.na(highest[,7])) #13/58
-scale_maxModel <- numParticipants - sum(is.na(highest[,8])) #4/58
-scale_sumModel <- numParticipants - sum(is.na(highest[,9])) #8/58
-scale_scaleModel <- numParticipants - sum(is.na(highest[,10])) #9/58
+scale_maxModel <- numParticipants - sum(is.na(highest[,8])) #5/58
+scale_sumModel <- numParticipants - sum(is.na(highest[,9])) #9/58
+scale_scaleModel <- numParticipants - sum(is.na(highest[,10])) #7/58
 
 #second order stats on the r-values of the model correlations to confidence
 #running anova  R values from the correlations with confidence
@@ -975,95 +1187,84 @@ rValues <- as.data.frame(rValue)
 anovaData <- as.data.frame(PID)
 anovaData$Rvalue <- rValues$V1
 anovaData$model <- "minimumDistance"
+anovaData$type <- "pure"
+anovaData$distance <- "min"
 
 #maximumDistance
 model2 <- as.data.frame(PID)
 model2$Rvalue <- rValues$V2
 model2$model <- "maximumDistance"
-
+model2$type <- "pure"
+model2$distance <- "max"
 anovaData <- rbind(anovaData, model2)
 
 #summedDistance
 model3 <- as.data.frame(PID)
 model3$Rvalue <- rValues$V3
 model3$model <- "summedDistance"
-
+model3$type <- "pure"
+model3$distance <- "sum"
 anovaData <- rbind(anovaData, model3)
 
 #asym_minimumDistance
 model4 <- as.data.frame(PID)
 model4$Rvalue <- rValues$V4
 model4$model <- "asym_minimumDistance"
-
+model4$type <- "asym"
+model4$distance <- "min"
 anovaData <- rbind(anovaData, model4)
- 
+
 #asym_maximumDistance
 model5 <- as.data.frame(PID)
 model5$Rvalue <- rValues$V5
 model5$model <- "asym_maximumDistance"
-
+model5$type <- "asym"
+model5$distance <- "max"
 anovaData <- rbind(anovaData, model5)
 
 #asym_summedDistance
 model6 <- as.data.frame(PID)
 model6$Rvalue <- rValues$V6
 model6$model <- "asym_summedDistance"
-
+model6$type <- "asym"
+model6$distance <- "sum"
 anovaData <- rbind(anovaData, model6)
 
 #scaled_minDistance
 model7 <- as.data.frame(PID)
 model7$Rvalue <- rValues$V7
 model7$model <- "scaled_minDistance"
-
+model7$type <- "scale"
+model7$distance <- "min"
 anovaData <- rbind(anovaData, model7)
 
 #scaled_maxDistance
 model8 <- as.data.frame(PID)
 model8$Rvalue <- rValues$V8
 model8$model <- "scaled_maxDistance"
-
+model8$type <- "scale"
+model8$distance <- "max"
 anovaData <- rbind(anovaData, model8)
 
 #scaled_sumDistance
 model9 <- as.data.frame(PID)
 model9$Rvalue <- rValues$V9
 model9$model <- "scaled_sumDistance"
-
+model9$type <- "scale"
+model9$distance <- "sum"
 anovaData <- rbind(anovaData, model9)
 
-#scaled_scaled
-model10 <- as.data.frame(PID)
-model10$Rvalue <- rValues$V10
-model10$model <- "scaled_scaled"
-
-anovaData <- rbind(anovaData, model10)
-rm(model2, model3, model4, model5, model6, model7, model8, model9, model10)
-
-anovaData <- anovaData %>% 
-  mutate(combiModel = case_when(
-    model == "minimumDistance" ~ 0,
-    model == "maximumDistance" ~ 0,
-    model == "summedDistance" ~ 0,
-    model == "scaled_scaled" ~ 0,
-    TRUE ~ 1
-  ))
+rm(model2, model3, model4, model5, model6, model7, model8, model9)
 
 anovaData$model <- as.factor(anovaData$model)
-
-#oneway ANOVA
-rValueAOV <- aov(Rvalue ~ model, data = anovaData)
-summary(rValueAOV)
-#postHoc <- TukeyHSD(rValueAOV); postHoc
-#check the pairwise comparisons
-int_comp <- emmeans(rValueAOV, ~ model)
-pairs(int_comp,adjust="none")
+anovaData$type <- as.factor(anovaData$type)
+anovaData$distance <- as.factor(anovaData$distance)
 
 #withinPID?
-rValueAOV <- aov_ez(id="PID", dv="Rvalue", data=anovaData, within = c("model"))
+rValueAOV <- aov_ez(id="PID", dv="Rvalue", data=anovaData, within = c("type","distance"))
 rValueAOV
 #check the pairwise comparisons
-int_comp <- emmeans(rValueAOV, ~ model)
+int_comp <- emmeans(rValueAOV, ~ type + distance + type*distance)
 pairs(int_comp,adjust="none")
 
 #tidy up the environment
@@ -1238,219 +1439,246 @@ modelData$VerticalSize <- confidence$VerticalSizeConst
 #find distances to color and size boundary again
 DistCol <- abs((modelData$HorizontalColor) - modelData$fish_color)#pick color here
 DistSize <- abs((modelData$VerticalSize) - modelData$fish_size) #pick size here
+scaleCol <- abs(1-modelData$HorizontalColor)
+scaleSize <- abs(1- modelData$VerticalSize)
 
 #Let's consider:
 #Minimum distance to bound (out of the two dimensions)
 modelData <- modelData %>% 
   mutate(minimumDistanceRB = ifelse(((DistCol-DistSize)>0),  DistSize, DistCol)) %>%
-  mutate(minimumDistanceRB =  (((1-minimumDistanceRB))*100)) %>% 
+  mutate(minimumDistanceRB = case_when(
+    minimumDistanceRB == DistSize ~ minimumDistanceRB*scaleSize,
+    TRUE ~ minimumDistanceRB*scaleCol
+  )) %>%
+  mutate(minimumDistanceRB =  (((minimumDistanceRB))*100)) %>% 
   #Maximum distance to bound (out of the two dimensions)
   mutate(maximumDistanceRB = ifelse(((DistCol-DistSize)<0), DistSize, DistCol)) %>%
-  mutate(maximumDistanceRB = (((1-maximumDistanceRB))*100)) %>%
+  mutate(maximumDistanceRB = case_when(
+      maximumDistanceRB == DistSize ~ maximumDistanceRB*scaleSize,
+      TRUE ~ maximumDistanceRB*scaleCol
+    )) %>%
+  mutate(maximumDistanceRB = (((maximumDistanceRB))*100)) %>%
   # Summed distance to bound (along the two dimensions)
   mutate(summedDistanceRB = (DistCol + DistSize)) %>%
-  mutate(summedDistanceRB = ((1-(summedDistanceRB/2))*100))
+  mutate(summedDistanceRB = (((summedDistanceRB/(scaleCol+scaleSize))*100))) 
+
 
 # now for the asymmetrical cases: 
 #• Minimum distance to bound (out of the two dimensions)
 modelData <- modelData %>% 
   mutate(asym_minimumDistanceRB = case_when (
-    relevantBoundary == 1 ~ abs((VerticalSize) - fish_size),
-    relevantBoundary == 2 ~ abs((HorizontalColor) - fish_color),
+    relevantBoundary == 1 ~ DistSize,
+    relevantBoundary == 2 ~ DistCol,
   )) %>% 
-  #now let's look at the border cases 
+  #now let's look at the O category  
   mutate(minDistCol = case_when (
-    grid_box == "box1_1" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box2_2" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box3_3" ~ abs((HorizontalColor) - fish_color)
+    grid_box == "box2_2" ~ DistCol,
+    grid_box == "box3_3" ~ DistCol,
+    grid_box == "box2_3" ~ DistCol,
+    grid_box == "box3_2" ~ DistCol
   )) %>%
   mutate(minDistSize = case_when (
-    grid_box == "box1_1" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box2_2" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box3_3" ~ abs((VerticalSize) - fish_size)
+    grid_box == "box2_2" ~ DistSize,
+    grid_box == "box3_3" ~ DistSize,
+    grid_box == "box2_3" ~ DistSize,
+    grid_box == "box3_2" ~ DistSize
   )) %>% 
   mutate(asym_minimumDistanceRB = case_when (
     relevantBoundary == 3 & (minDistCol-minDistSize)> 0 ~ minDistSize,
     relevantBoundary == 3 & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    #set rest of O category space explicitly
+    grid_box == "box2_3" & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    grid_box == "box3_2" & (minDistCol-minDistSize)< 0 ~ minDistCol,
+    grid_box == "box2_3" & (minDistCol-minDistSize)> 0 ~ minDistSize,
+    grid_box == "box3_2" & (minDistCol-minDistSize)> 0 ~ minDistSize,
     TRUE ~ asym_minimumDistanceRB #minimum distance is scaled from 0-0.66
   )) %>% 
+  mutate(asym_minimumDistanceRB = case_when(
+    asym_minimumDistanceRB == DistCol ~ asym_minimumDistanceRB*scaleCol,
+    TRUE ~ asym_minimumDistanceRB*scaleSize
+  ))%>%
   mutate(asym_minimumDistanceRB = case_when ( #overwrite for grid_box1_1 
-    relevantBoundary == 3 & grid_box == "box1_1" ~ pythagorean(minDistCol,minDistSize),
-    TRUE ~ asym_minimumDistanceRB
+    grid_box == "box1_1" ~ (pythagorean(DistCol,DistSize))*(mean(DistCol +DistSize)),
+    TRUE ~ asym_minimumDistanceRB 
   )) %>%
-  mutate(asym_minimumDistanceRB = ((1-asym_minimumDistanceRB)*100))
+  mutate(asym_minimumDistanceRB = asym_minimumDistanceRB*100)
 
 modelData <- subset(modelData, select = -c(minDistCol, minDistSize))
 
 #• Maximum distance to bound (out of the two dimensions)
 modelData <- modelData %>% 
   mutate(asym_maximumDistanceRB = case_when (
-    relevantBoundary == 1 ~ abs((VerticalSize) - fish_size),
-    relevantBoundary == 2 ~ abs((HorizontalColor) - fish_color),
+    relevantBoundary == 1 ~ DistSize,
+    relevantBoundary == 2 ~ DistCol,
   )) %>% #now let's look at the border cases 
   mutate(maxDistCol = case_when (
-    grid_box == "box1_1" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box2_2" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box3_3" ~ abs((HorizontalColor) - fish_color),
-    #overwrite 2 grid boxes that need reconstrual here
-    grid_box == "box2_3" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box3_2" ~ abs((HorizontalColor) - fish_color)
+    grid_box == "box1_1" ~ DistCol,
+    grid_box == "box2_2" ~ DistCol,
+    grid_box == "box3_3" ~ DistCol,
+    grid_box == "box2_3" ~ DistCol,
+    grid_box == "box3_2" ~ DistCol
   )) %>%
   mutate(maxDistSize = case_when (
-    grid_box == "box1_1" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box2_2" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box3_3" ~ abs((VerticalSize) - fish_size),
-    #overwrite 2 grid boxes that need reconstrual here
-    grid_box == "box2_3" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box3_2" ~ abs((VerticalSize) - fish_size)
+    grid_box == "box1_1" ~ DistSize,
+    grid_box == "box2_2" ~ DistSize,
+    grid_box == "box3_3" ~ DistSize,
+    grid_box == "box2_3" ~ DistSize,
+    grid_box == "box3_2" ~ DistSize
   )) %>% 
   mutate(asym_maximumDistanceRB = case_when (
     relevantBoundary == 3 & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
     relevantBoundary == 3 & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
-    #overwrite those 2 grid boxes explictly here
     grid_box == "box2_3" & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
     grid_box == "box3_2" & (maxDistCol-maxDistSize)> 0 ~ maxDistCol,
     grid_box == "box2_3" & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
     grid_box == "box3_2" & (maxDistCol-maxDistSize)< 0 ~ maxDistSize,
     TRUE ~ asym_maximumDistanceRB 
   ))  %>% 
+  mutate(asym_maximumDistanceRB = case_when(
+    asym_maximumDistanceRB == DistSize ~ asym_maximumDistanceRB*scaleSize,
+    TRUE ~  asym_maximumDistanceRB*scaleCol
+  )) %>%
   mutate(asym_maximumDistanceRB = case_when (#overwrite grid_box1_1 in a different way 
-    relevantBoundary == 3 & grid_box == "box1_1" ~ pythagorean(maxDistCol,maxDistSize),
+    grid_box == "box1_1" ~ (pythagorean(DistCol,DistSize))*(mean(DistCol +DistSize)),
     TRUE ~ asym_maximumDistanceRB
   ))%>%
-  mutate(asym_maximumDistanceRB = ((1-asym_maximumDistanceRB)*100))
+  mutate(asym_maximumDistanceRB = ((asym_maximumDistanceRB)*100))
 
 modelData <- subset(modelData, select = -c(maxDistCol, maxDistSize))
 
 #• Summed distance to bound (along the two dimensions)
 modelData <- modelData %>% 
   mutate(asym_summedDistanceRB = case_when (
-    relevantBoundary == 1 ~ abs((VerticalSize) - fish_size),
-    relevantBoundary == 2 ~ abs((HorizontalColor) - fish_color),
+    relevantBoundary == 1 ~ DistSize,
+    relevantBoundary == 2 ~ DistCol,
   )) %>% #now let's look at the border cases 
   mutate(sumDistCol = case_when (
-    grid_box == "box1_1" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box2_2" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box3_3" ~ abs((HorizontalColor) - fish_color),
-    #overwrite 2 grid boxes that need reconstrual here
-    grid_box == "box2_3" ~ abs((HorizontalColor) - fish_color),
-    grid_box == "box3_2" ~ abs((HorizontalColor) - fish_color)
+    grid_box == "box2_2" ~ DistCol,
+    grid_box == "box3_3" ~ DistCol,
+    grid_box == "box2_3" ~ DistCol,
+    grid_box == "box3_2" ~ DistCol
   )) %>%
   mutate(sumDistSize = case_when (
-    grid_box == "box1_1" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box2_2" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box3_3" ~ abs((VerticalSize) - fish_size),
-    #overwrite 2 grid boxes that need reconstrual here
-    grid_box == "box2_3" ~ abs((VerticalSize) - fish_size),
-    grid_box == "box3_2" ~ abs((VerticalSize) - fish_size)
+    grid_box == "box2_2" ~ DistSize,
+    grid_box == "box3_3" ~ DistSize,
+    grid_box == "box2_3" ~ DistSize,
+    grid_box == "box3_2" ~ DistSize
   )) %>% 
   mutate(asym_summedDistanceRB = case_when (
     relevantBoundary == 3  ~ sumDistCol + sumDistSize,
-    #overwrite those 2 grid boxes explicitly here
     grid_box == "box2_3" ~ sumDistCol + sumDistSize,
     grid_box == "box3_2" ~ sumDistCol + sumDistSize,
     TRUE ~ asym_summedDistanceRB 
   )) %>%
   mutate(asym_summedDistanceRB = case_when (#overwrite grid_box1_1 in a different way 
-    grid_box == "box1_1" ~ pythagorean(sumDistCol,sumDistSize),
+    grid_box == "box1_1" ~ (pythagorean(DistCol,DistSize))*(mean(DistCol+DistSize)),
     TRUE ~ asym_summedDistanceRB
   ))%>%
   mutate(asym_summedDistanceRB = case_when(
-    grid_box == "box2_3" ~ (1 - (asym_summedDistanceRB/2))*100,
-    grid_box == "box2_2" ~ (1 - (asym_summedDistanceRB/2))*100,
-    grid_box == "box3_3" ~ (1 - (asym_summedDistanceRB/2))*100,
-    grid_box == "box3_2" ~ (1 - (asym_summedDistanceRB/2))*100,
-    TRUE ~ (1 - asym_summedDistanceRB)*100)) 
+    asym_summedDistanceRB == (DistCol + DistSize) ~ (asym_summedDistanceRB/(scaleCol + scaleSize))*100,
+    asym_summedDistanceRB == DistCol ~ (asym_summedDistanceRB*(scaleCol))*100,
+    asym_summedDistanceRB == DistSize ~ (asym_summedDistanceRB*(scaleSize))*100,
+    TRUE ~ asym_summedDistanceRB*100))
 
 modelData <- subset(modelData, select = -c(sumDistCol, sumDistSize, relevantBoundary))
 
 #now consider the stimulus scaled models
 modelData <- modelData %>% 
-  mutate(scaled_minDistanceRB = (((1- fish_size) + (1-fish_color))/2)
-  ) %>%
+  mutate(scaled_minDistanceRB = (((1- fish_size) + (1-fish_color))/2)) %>%
   mutate(scaled_minDistanceRB = case_when(
-    grid_box == "box2_2" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    grid_box == "box2_3" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    grid_box == "box3_2" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    grid_box == "box3_3" ~ ifelse(((DistCol-DistSize)>0),  DistSize, DistCol),
-    TRUE ~ scaled_minDistanceRB
+    grid_box == "box2_2" ~ minimumDistanceRB,
+    grid_box == "box2_3" ~ minimumDistanceRB,
+    grid_box == "box3_2" ~ minimumDistanceRB,
+    grid_box == "box3_3" ~ minimumDistanceRB,
+    TRUE ~ scaled_minDistanceRB*100
   )) %>%
-  mutate(scaled_minDistanceRB = scaled_minDistanceRB*100) %>%
   mutate(scaled_maxDistanceRB = (((1- fish_size) + (1-fish_color))/2)
   ) %>%
   mutate(scaled_maxDistanceRB = case_when(
-    grid_box == "box2_2" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    grid_box == "box2_3" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    grid_box == "box3_2" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    grid_box == "box3_3" ~ ifelse(((DistCol-DistSize)<0),  DistSize, DistCol),
-    TRUE ~ scaled_maxDistanceRB
+    grid_box == "box2_2" ~ maximumDistanceRB,
+    grid_box == "box2_3" ~ maximumDistanceRB,
+    grid_box == "box3_2" ~ maximumDistanceRB,
+    grid_box == "box3_3" ~ maximumDistanceRB,
+    TRUE ~ scaled_maxDistanceRB*100
   )) %>%
-  mutate(scaled_maxDistanceRB = scaled_maxDistanceRB*100) %>%
   mutate(scaled_sumDistanceRB = (((1- fish_size) + (1-fish_color))/2)
   ) %>%
   mutate(scaled_sumDistanceRB = case_when(
-    grid_box == "box2_2" ~ (DistCol + DistSize)/2,
-    grid_box == "box2_3" ~ (DistCol + DistSize)/2,
-    grid_box == "box3_2" ~ (DistCol + DistSize)/2,
-    grid_box == "box3_3" ~ (DistCol + DistSize)/2,
-    TRUE ~ scaled_sumDistanceRB
+    grid_box == "box2_2" ~ summedDistanceRB,
+    grid_box == "box2_3" ~ summedDistanceRB,
+    grid_box == "box3_2" ~ summedDistanceRB,
+    grid_box == "box3_3" ~ summedDistanceRB,
+    TRUE ~ scaled_sumDistanceRB*100
   )) %>%
-  mutate(scaled_sumDistanceRB = scaled_sumDistanceRB*100) 
+  mutate(scaled_scaledRB = (((1- fish_size) + (1-fish_color))/2)
+  ) %>%
+  mutate(scaled_scaledRB = case_when(
+    grid_box == "box2_2" ~ 1-scaled_scaledRB,
+    grid_box == "box2_3" ~ 1-scaled_scaledRB,
+    grid_box == "box3_2" ~ 1-scaled_scaledRB,
+    grid_box == "box3_3" ~ 1-scaled_scaledRB,
+    TRUE ~ scaled_scaledRB
+  )) %>%
+  mutate(scaled_scaledRB = scaled_scaledRB*100)
+
+#remove any awkward trials with predicted confidence >100 
+#this emerges in summed, asym_summed, and scaled_sum
+#because some peoples boundary on color is way too high (affects at most 107 trials)
+#seen across a nest of 7 pp and 107 trials for pure summed,
+#3 pp and 19 trials from asym_sum and scaled sum
+
+#modelData <-subset(modelData, summedDistanceRB <100) #remove these 
 
 ############### 5.1 ANOVA on second order RB model values #####################
-
-# run correlation within each individual for the 10 models 
-pValue <- matrix(data = NA, nrow = numParticipants, ncol = 10)
-rValue <- matrix(data = NA, nrow = numParticipants, ncol = 10)
+# run correlation within each individual for the 9 models 
+pValue <- matrix(data = NA, nrow = numParticipants, ncol = 9)
+rValue <- matrix(data = NA, nrow = numParticipants, ncol = 9)
 PID <- c(1:numParticipants)
 for(i in PID){
   dataX <- subset(modelData, PID == i)
   dataX <- dataX[c("confidence", 
-                   "minimumDistance","maximumDistance", "summedDistance", 
-                   "asym_minimumDistance", "asym_maximumDistance", "asym_summedDistance",
-                   "scaled_minDistance", "scaled_maxDistance", "scaled_sumDistance",
-                   "scaled_scaled")]
+                   "minimumDistanceRB","maximumDistanceRB", "summedDistanceRB", 
+                   "asym_minimumDistanceRB", "asym_maximumDistanceRB", "asym_summedDistanceRB",
+                   "scaled_minDistanceRB", "scaled_maxDistanceRB", "scaled_sumDistanceRB")]
   correlations <- rcorr(as.matrix(dataX))
-  pValue[i,] <- correlations$P[1,2:11]
-  rValue[i,] <- correlations$r[1,2:11]
+  pValue[i,] <- correlations$P[1,2:10]
+  rValue[i,] <- correlations$r[1,2:10]
 }
-
+ 
 #check which of these correlations are significant
 sigCorrs <- ifelse((pValue<0.05),  rValue, NA) #just highlights what corrs are significant
 
 minSig <- numParticipants - sum(is.na(sigCorrs[,1])) #26/58 sig corr for min model --- marginally highest num here
-maxSig <- numParticipants - sum(is.na(sigCorrs[,2])) #16/58 sig corr for max model
+maxSig <- numParticipants - sum(is.na(sigCorrs[,2])) #19/58 sig corr for max model
 sumSig <- numParticipants - sum(is.na(sigCorrs[,3])) #24/58 sig for summed model 
 
-asym_minSig <- numParticipants - sum(is.na(sigCorrs[,4])) #12/58 sig corr for asym_min model
+asym_minSig <- numParticipants - sum(is.na(sigCorrs[,4])) #20/58 sig corr for asym_min model
 asym_maxSig <- numParticipants - sum(is.na(sigCorrs[,5])) #16/58 sig corr for asym_max model
-asym_sumSig <- numParticipants - sum(is.na(sigCorrs[,6])) #19/58 sig for asym_summed model 
+asym_sumSig <- numParticipants - sum(is.na(sigCorrs[,6])) #22/58 sig for asym_summed model 
 
 scale_minSig <- numParticipants - sum(is.na(sigCorrs[,7])) #24/58
-scale_maxSig <- numParticipants - sum(is.na(sigCorrs[,8])) #26/58
-scale_sumSig <- numParticipants - sum(is.na(sigCorrs[,9])) #28/58
-scale_scaleSig<- numParticipants - sum(is.na(sigCorrs[,10])) #24/58
+scale_maxSig <- numParticipants - sum(is.na(sigCorrs[,8])) #25/58
+scale_sumSig <- numParticipants - sum(is.na(sigCorrs[,9])) #29/58
 
 #identify the largest correlation for each pp
-highest <- matrix(data = NA, nrow = numParticipants, ncol = 10)
+highest <- matrix(data = NA, nrow = numParticipants, ncol = 9)
 for(i in PID){
   dataX <-rValue[i,]
   index <- which.max(dataX)
   highest[i,index] <- max(dataX)
 } #these are the strongest within individual correlations (not necessarily sig corrs)
 
-minModel <- numParticipants - sum(is.na(highest[,1])) #6/58 show strongest corr for min model
+minModel <- numParticipants - sum(is.na(highest[,1])) #9/58 show strongest corr for min model
 maxModel <- numParticipants - sum(is.na(highest[,2])) #2/58 show strongest corr for max model
 sumModel <- numParticipants - sum(is.na(highest[,3])) #7/58 show strongest corr for summed model
 
-asym_minModel <- numParticipants - sum(is.na(highest[,4])) #1/58 show strongest corr for min model
+asym_minModel <- numParticipants - sum(is.na(highest[,4])) #5/58 show strongest corr for min model
 asym_maxModel <- numParticipants - sum(is.na(highest[,5])) #2/58 show strongest corr for max model
 asym_sumModel <- numParticipants - sum(is.na(highest[,6])) #6/58 show strongest corr for summed model
 
-scale_minModel <- numParticipants - sum(is.na(highest[,7])) #13/58
-scale_maxModel <- numParticipants - sum(is.na(highest[,8])) #4/58
-scale_sumModel <- numParticipants - sum(is.na(highest[,9])) #8/58
-scale_scaleModel <- numParticipants - sum(is.na(highest[,10])) #9/58
+scale_minModel <- numParticipants - sum(is.na(highest[,7])) #10/58
+scale_maxModel <- numParticipants - sum(is.na(highest[,8])) #25/58
+scale_sumModel <- numParticipants - sum(is.na(highest[,9])) #12/58
 
 #second order stats on the r-values of the model correlations to confidence
 #running anova  R values from the correlations with confidence
@@ -1459,96 +1687,86 @@ rValues <- as.data.frame(rValue)
 anovaData <- as.data.frame(PID)
 anovaData$Rvalue <- rValues$V1
 anovaData$model <- "minimumDistance"
+anovaData$type <- "pure"
+anovaData$distance <- "min"
 
 #maximumDistance
 model2 <- as.data.frame(PID)
 model2$Rvalue <- rValues$V2
 model2$model <- "maximumDistance"
-
+model2$type <- "pure"
+model2$distance <- "max"
 anovaData <- rbind(anovaData, model2)
 
 #summedDistance
 model3 <- as.data.frame(PID)
 model3$Rvalue <- rValues$V3
 model3$model <- "summedDistance"
-
+model3$type <- "pure"
+model3$distance <- "sum"
 anovaData <- rbind(anovaData, model3)
 
 #asym_minimumDistance
 model4 <- as.data.frame(PID)
 model4$Rvalue <- rValues$V4
 model4$model <- "asym_minimumDistance"
-
+model4$type <- "asym"
+model4$distance <- "min"
 anovaData <- rbind(anovaData, model4)
 
 #asym_maximumDistance
 model5 <- as.data.frame(PID)
 model5$Rvalue <- rValues$V5
 model5$model <- "asym_maximumDistance"
-
+model5$type <- "asym"
+model5$distance <- "max"
 anovaData <- rbind(anovaData, model5)
 
 #asym_summedDistance
 model6 <- as.data.frame(PID)
 model6$Rvalue <- rValues$V6
 model6$model <- "asym_summedDistance"
-
+model6$type <- "asym"
+model6$distance <- "sum"
 anovaData <- rbind(anovaData, model6)
 
 #scaled_minDistance
 model7 <- as.data.frame(PID)
 model7$Rvalue <- rValues$V7
 model7$model <- "scaled_minDistance"
-
+model7$type <- "scale"
+model7$distance <- "min"
 anovaData <- rbind(anovaData, model7)
 
 #scaled_maxDistance
 model8 <- as.data.frame(PID)
 model8$Rvalue <- rValues$V8
 model8$model <- "scaled_maxDistance"
-
+model8$type <- "scale"
+model8$distance <- "max"
 anovaData <- rbind(anovaData, model8)
 
 #scaled_sumDistance
 model9 <- as.data.frame(PID)
 model9$Rvalue <- rValues$V9
 model9$model <- "scaled_sumDistance"
-
+model9$type <- "scale"
+model9$distance <- "sum"
 anovaData <- rbind(anovaData, model9)
 
-#scaled_scaled
-model10 <- as.data.frame(PID)
-model10$Rvalue <- rValues$V10
-model10$model <- "scaled_scaled"
-
-anovaData <- rbind(anovaData, model10)
-rm(model2, model3, model4, model5, model6, model7, model8, model9, model10)
-
-anovaData <- anovaData %>% 
-  mutate(combiModel = case_when(
-    model == "minimumDistance" ~ 0,
-    model == "maximumDistance" ~ 0,
-    model == "summedDistance" ~ 0,
-    model == "scaled_scaled" ~ 0,
-    TRUE ~ 1
-  ))
+rm(model2, model3, model4, model5, model6, model7, model8, model9)
 
 anovaData$model <- as.factor(anovaData$model)
+anovaData$type <- as.factor(anovaData$type)
+anovaData$distance <- as.factor(anovaData$distance)
 
-#oneway ANOVA
-rValueAOV <- aov(Rvalue ~ model, data = anovaData)
-summary(rValueAOV)
-#postHoc <- TukeyHSD(rValueAOV); postHoc
-#check the pairwise comparisons
-int_comp <- emmeans(rValueAOV, ~ model)
-pairs(int_comp,adjust="none")
+#ANOVA
+rValueAOV2 <- aov_ez(id="PID", dv="Rvalue", data=anovaData, within = c("type","distance"));rValueAOV2
 
-#withinPID?
-rValueAOV <- aov_ez(id="PID", dv="Rvalue", data=anovaData, within = c("model"))
-rValueAOV
-#check the pairwise comparisons
-int_comp <- emmeans(rValueAOV, ~ model)
-pairs(int_comp,adjust="none")
+test <- aov(Rvalue ~ distance + type + distance*type, data = anovaData)
+summary(rValueAOV2)
+int_comp2 <- emmeans(rValueAOV2, ~ type + distance + type*distance)
+pairs(int_comp2,adjust="none")
 
 #tidy up the environment
 rm(minSig, maxSig, sumSig, minModel, maxModel, sumModel, i, dataX, index, correlations, 
@@ -1556,6 +1774,31 @@ rm(minSig, maxSig, sumSig, minModel, maxModel, sumModel, i, dataX, index, correl
    asym_maxModel, asym_maxSig, asym_minModel,
    asym_minSig, asym_sumModel,  asym_sumSig,  scale_maxModel,
    scale_minModel,  scale_sumModel, scale_minSig, scale_maxSig,
-   scale_sumSig, scale_scaleModel, scale_scaleSig, rValues)
+   scale_sumSig, rValues)
+
+
+#check on the values from the ANOVAs - meanRvalue per model 
+x <- anovaData %>%
+  group_by(model) %>%
+  dplyr::summarise(meanR = mean(Rvalue))
+
+anovaData$model <- factor(anovaData$model,                                    # Change ordering manually
+                  levels = c("minimumDistance", "maximumDistance", "summedDistance",
+                             "asym_minimumDistance", "asym_maximumDistance", "asym_summedDistance",
+                             "scaled_minDistance", "scaled_maxDistance", "scaled_sumDistance"))
+
+a <- ggplot(anovaData, aes(model, y=Rvalue, fill = type))+ 
+  stat_summary(fun = mean, geom = "bar", position = position_dodge(1)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", position = position_dodge(1), width=0.5) +
+  labs(title="Model Corrs", x="Model", y="Mean RValue")+
+  
+  ylim(0,.15); a
+
+ggplot(bins, aes(factor(distanceBin), y=binMean, fill=distribution))+ 
+  stat_summary(fun = mean, geom = "bar", position = position_dodge(1)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", position = position_dodge(1), width=0.5) +
+  scale_fill_manual(values=c("#E69F00","#999999")) +
+  labs(title="Confidence across distance bins", x="Distance Bin", y="Mean Confidence")+
+  ylim(0,100)
 
 ###############################################################################
