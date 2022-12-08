@@ -382,7 +382,8 @@ confidence_smooth <- confidence_smooth %>%
   ))
 
 #confidence_smooth1 <- subset(confidence_smooth, PID ==1)
-pal <- colorRampPalette(c("white", "red"))
+pal <- colorRampPalette(c("blue", "red"))
+
 levelplot(smoothConf ~ x * y | PID, confidence_smooth,
           layout=c(10,6), as.table = TRUE,
           col.regions = pal(100),
@@ -398,9 +399,15 @@ levelplot(smoothConfZ ~ x * y | PID, confidence_smooth2,
 ) + 
   layer_(panel.2dsmoother(..., n = 200))
 
-smoother <- ggplot(confidence_smooth, aes(x = x, y = y, fill = smoothConfZ)) +
+levelplot(smoothConf ~ x * y, confidence_smooth,
+          col.regions = pal(100),
+          panel = panel.levelplot.points, cex = 0
+) + 
+  layer_(panel.2dsmoother(..., n = 200))
+
+smoother <- ggplot(confidence_smooth, aes(x = x, y = y, fill = smoothConf)) +
   geom_tile() +
-  scale_fill_gradient(low = "white", high = "red") +
+  scale_fill_gradient(low = "blue", high = "red") +
   coord_fixed() +
   ggtitle("Smooth Conf") +
   labs(x='Stimulus Size', y = 'Color Gradient') +
@@ -1791,14 +1798,32 @@ a <- ggplot(anovaData, aes(model, y=Rvalue, fill = type))+
   stat_summary(fun = mean, geom = "bar", position = position_dodge(1)) + 
   stat_summary(fun.data = mean_se, geom = "errorbar", position = position_dodge(1), width=0.5) +
   labs(title="Model Corrs", x="Model", y="Mean RValue")+
-  
   ylim(0,.15); a
 
-ggplot(bins, aes(factor(distanceBin), y=binMean, fill=distribution))+ 
-  stat_summary(fun = mean, geom = "bar", position = position_dodge(1)) + 
-  stat_summary(fun.data = mean_se, geom = "errorbar", position = position_dodge(1), width=0.5) +
-  scale_fill_manual(values=c("#E69F00","#999999")) +
-  labs(title="Confidence across distance bins", x="Distance Bin", y="Mean Confidence")+
-  ylim(0,100)
+plotData <- anovaData %>%
+  group_by(model) %>%
+  dplyr::summarise(meanR = mean(Rvalue))
+plotData$type <- c("pure", "pure", "pure", "asymmetrical", "asymmetrical", "asymmetrical",
+                   "scaled", "scaled", "scaled")
+plotData$type <- as.factor(plotData$type)
+
+plotData$distance <- c("max", "min", "sum", "max", "min", "sum",
+                       "max", "min", "sum")
+plotData$distance <- as.factor(plotData$distance)
+
+library(hrbrthemes)
+
+ ggplot(plotData, aes(x = type, y=meanR, fill = distance))+
+  geom_bar(position="dodge", stat = "identity") +
+  labs(title="Correlating Model Simulated Confidence with Actual Confidence", x="Model", y="Mean RValue")+
+   theme_ipsum() + scale_fill_hue(c = 40)
+
+  
+ggplot(plotData, aes(x=distance)) +
+  geom_point(aes(y= meanR), shape=21, color="black", fill="#69b3a2", size=6) +
+  theme_ipsum() +
+  ggtitle("RValues")
+
+
 
 ###############################################################################
