@@ -1287,6 +1287,14 @@ rm(minSig, maxSig, sumSig, minModel, maxModel, sumModel, i, dataX, index, correl
 
 #likelihood comparisons might be the way to go. 
 #the likelihood of it being from model X given the data Y 
+modelData$shuffleConf <- NA_real_
+
+shuffleConf <- 
+for(i in PID){ #for each pp
+  data <- subset(modelData, PID == i)
+  data$shuffleConf <- sample(data$confidence, length(data$confidence), replace = FALSE)
+  modelData$shuffleConf[PID == i] <- data$shuffleConf
+}
 
 
 ############### 4.0 Response bound work #######################################
@@ -1636,6 +1644,13 @@ modelData <- modelData %>%
 #3 pp and 19 trials from asym_sum and scaled sum
 
 #modelData <-subset(modelData, summedDistanceRB <100) #remove these 
+
+############### SHUFFLE DECK #################################################
+#create a shuffled data pack where confidence is shuffled around trials per participant
+#and the new shuffled data are correlated with each model and the R values are extracted
+#Want to check that the r-values are meaningfully different to noise in the models
+
+pp1 <- 
 
 ############### 5.1 ANOVA on second order RB model values #####################
 # run correlation within each individual for the 9 models 
