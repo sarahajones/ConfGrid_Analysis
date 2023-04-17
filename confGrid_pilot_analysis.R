@@ -95,6 +95,7 @@ confidence <- subset(dat_csv, confidence != "null") #we have just over 9000 tria
 
 confidence$fish_color <- 1- confidence$fish_color #flip color
 
+#check accuracy on test trials
 accuracy <- confidence %>% 
   group_by(PID) %>%
   dplyr::summarise(mean = mean(as.numeric(correct)))
