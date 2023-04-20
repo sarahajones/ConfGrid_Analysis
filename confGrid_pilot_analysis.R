@@ -24,7 +24,8 @@ list.of.packages <- c("tidyverse",
                       "Hmisc", 
                       "ggpubr",
                       "afex", #running ANOVA
-                      "emmeans"#pairwise ttests
+                      "emmeans", #pairwise ttests
+                      "jtools" #apa formatting visuals
                       )
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])] #check for any uninstalled packages
 if(length(new.packages)) install.packages(new.packages) #install any missing packages (requires internet access)
@@ -91,8 +92,7 @@ rm(gender, female, male, nonbinary, handedness, right, ambi, ageData, genderData
 #lets have a look at confidence across the space 
 dat_csv$confidence <- as.numeric(dat_csv$confidence)
 confidence <- subset(dat_csv,is.na(confidence) == FALSE)
-confidence <- subset(dat_csv, confidence != "null") #we have just over 9000 trials
-
+confidence <- subset(dat_csv, confidence != "null") #we have just over 9000 trial, 
 confidence$fish_color <- 1- confidence$fish_color #flip color
 
 #check accuracy on test trials
@@ -101,19 +101,48 @@ accuracy <- confidence %>%
   dplyr::summarise(mean = mean(as.numeric(correct)))
 summary(accuracy$mean)
 
-PIDwiseAccuracy <- ggplot(data = accuracy) +
-  geom_point(mapping = aes(x = PID, y = mean)) +
-  labs(title="Participant Accuracy", x="PID", y="Accuracy") + 
-  xlim(1, numParticipants)+ ylim(0, 1); PIDwiseAccuracy
-
 accuracy <- confidence %>% 
   group_by(PID, block) %>%
   dplyr::summarise(mean = mean(as.numeric(correct)))
+accuracy$block <- as.factor(accuracy$block)
+
+#find overall accuracy 
+overall_acc <- confidence %>% 
+  group_by(PID) %>%
+  dplyr::summarise(mean = mean(as.numeric(correct)))
+overall_acc$block <- 0
+
+overall <- overall_acc %>%
+  dplyr::mutate(PID = reorder(PID, mean))
+overall$order <- as.numeric(levels(overall$PID))
+list <- overall$order
+overall <- overall %>%
+  arrange(factor(PID), levels = order)
 
 PIDwiseAccuracy <- ggplot(data = accuracy) +
   geom_point(mapping = aes(x = PID, y = mean, color = block)) +
-  labs(title="Participant Accuracy", x="PID", y="Accuracy") + 
+  theme_apa(legend.pos = 'bottomright') +
+  labs(title="Participant Accuracy", x="Participant ID", y="Accuracy") + 
   xlim(1, numParticipants)+ ylim(0, 1); PIDwiseAccuracy
+
+blockPIDwiseAccuracyPlot <- ggplot() +
+  geom_point(data = overall, mapping = aes(x = fct_inorder(PID), y = mean))+ 
+  geom_point(data = accuracy, mapping = aes(x = PID, y = mean, color = block)) +
+  theme(axis.text.x = element_blank(), panel.grid = element_blank(), legend.title = element_blank(), legend.position = c(0.95, 0.2), 
+        axis.line = element_line(colour = "black", size = 0.25, linetype = "solid")) +
+  color_palette(palette = blues9) +
+  labs(title="Participant Accuracy", x="Participant ID", y="Accuracy") + 
+  ylim(0, 1); blockPIDwiseAccuracyPlot
+
+#Broadly, how are people using the confidence scale? 
+ggplot(data = confidence, aes(confidence))+
+  geom_bar() +
+  facet_wrap(~PID)
+
+PIDwiseUniqueCount <- confidence %>%
+  group_by(PID) %>%
+  dplyr::summarise(uniqueCount = length(unique(confidence)))
+summary(PIDwiseUniqueCount)
 
 #confidence and accuracy 
 accuracy <- confidence %>% 
@@ -122,24 +151,77 @@ accuracy <- confidence %>%
 
 bxp <- ggboxplot(
   accuracy, x = "correct", y = "mean", 
-  ylab = "Reaction Time (ms)", xlab = "Mean confidence - split by accuracy", add = "jitter"
+  ylab = "Confidence", xlab = "Mean confidence by accuracy", add = "jitter"
 ); bxp
 inacc <- subset(accuracy, correct == 0)
 acc <- subset(accuracy, correct == 1)
 t.test(acc$mean, inacc$mean, paired = TRUE, alternative = "two.sided")
 
-#how are people using the confidence scale? 
-ggplot(data = confidence, aes(confidence))+
-  geom_bar() +
-  facet_wrap(~PID)
+#confidenceRT and accuracy 
+accuracy <- confidence %>% 
+  group_by(PID, correct) %>%
+  dplyr::summarise(meanRT = mean(delta_confidence_response_time))
+bxp <- ggboxplot(
+  accuracy, x = "correct", y = "meanRT", 
+  ylab = "Confidence", xlab = "Mean confidence by accuracy", add = "jitter"
+); bxp
+inacc <- subset(accuracy, correct == 0)
+acc <- subset(accuracy, correct == 1)
+t.test(acc$meanRT, inacc$meanRT, paired = TRUE, alternative = "two.sided")
 
-PIDwiseUniqueCount <- confidence %>%
+rm(acc, bxp, inacc, PIDwiseUniqueCount, cutoffLow, overall, overall_acc, blockPIDwiseAccuracyPlot, PIDwiseAccuracy, list )
+
+#confidence patterns with response patterns 
+confAcc <- subset(confidence, correct == 1)
+native <- subset(confAcc, grid_location == "corner")
+invasive <- subset(confAcc, grid_location == "L")
+
+#Prediciton 1 - a difference between L and O category
+native <- native%>% 
   group_by(PID) %>%
-  dplyr::summarise(uniqueCount = length(unique(confidence)))
-cutoffLow <- 5
-excludeConf <- subset(PIDwiseUniqueCount, uniqueCount < cutoffLow) #nobody here used less than 3 values
+  dplyr::summarise(mean = mean(confidence))
+invasive <- invasive%>% 
+  group_by(PID) %>%
+  dplyr::summarise(mean = mean(confidence))
+t.test(native$mean, invasive$mean, paired = TRUE, alternative = "two.sided")#no difference
 
+grid <- confAcc %>% 
+  group_by(PID, grid_box) %>%
+  dplyr::summarise(mean = mean(confidence))
+grid$grid_box <- as.factor(grid$grid_box)
+gridAOV <- aov_ez(id="PID", dv="mean", data=grid, within = c("grid_box"));gridAOV
 
+grid11 <- subset(grid, grid_box =="box1_1")
+grid12 <- subset(grid, grid_box =="box1_2")
+grid13 <- subset(grid, grid_box =="box1_3")
+grid21 <- subset(grid, grid_box =="box2_1")
+grid22 <- subset(grid, grid_box =="box2_2")
+grid23 <- subset(grid, grid_box =="box2_3")
+grid31 <- subset(grid, grid_box =="box3_1")
+grid32 <- subset(grid, grid_box =="box3_2")
+grid33 <- subset(grid, grid_box =="box3_3")
+
+#Prediction 2 - the difference between grid2_2 and grid3_3
+t.test(grid33$mean, grid22$mean, paired = TRUE, alternative = "two.sided")
+
+#Prediction 3 - 
+g11 <- mean(grid11$mean) #72.89
+g12 <- mean(grid12$mean) #62.11
+g13 <- mean(grid13$mean) #65.5
+g21 <- mean(grid21$mean) #72.4
+g31 <- mean(grid31$mean) #73.5
+
+#Prediction 4
+extra <- data.frame(PID = as.numeric(12),
+                       grid_box = "box1_3",
+                       mean = NA_real_)
+grid13 <- rbind(grid13, extra)
+grid13 <- grid13[c(1:11, 58, 12:57),]
+
+t.test(grid11$mean, grid13$mean, paired = TRUE, alternative = "two.sided") #different 
+t.test(grid11$mean, grid31$mean, paired = TRUE, alternative = "two.sided") #not diff
+
+#confidence across the space 
 ggplot(data=confidence, aes(fish_size)) + #the trials worked - labelling was correct
   geom_point(mapping = aes(x = fish_size, y = fish_color, color = distribution_name))
 
@@ -154,7 +236,6 @@ ggplot(data=confidence, aes(fish_size)) +
   scale_color_gradient(low = "blue", high = "red") +
   scale_alpha_manual(values=c(0.2,0.5)) +
   facet_wrap( ~ PID)
-
 #okay - we can see some variability across pp - 
 #some pp highly confident always e.g. pp4, some low confidence always e.g. pp 12
 #some showing nice lowered confidence along the category bound e.g. pp 21
@@ -181,6 +262,7 @@ for(i in pps){
   zConf[j,i] <- as.numeric(x)
   }
 }
+
 
 #wrangle zConf back into a single column -remove NA to merge with confidence dataframe
 zConfCol <- as.data.frame(zConf[,1])
@@ -406,17 +488,17 @@ levelplot(smoothConf ~ x * y, confidence_smooth,
 ) + 
   layer_(panel.2dsmoother(..., n = 200))
 
-smoother <- ggplot(confidence_smooth, aes(x = x, y = y, fill = smoothConf)) +
-  geom_tile() +
-  scale_fill_gradient(low = "blue", high = "red") +
-  coord_fixed() +
-  ggtitle("Smooth Conf") +
-  labs(x='Stimulus Size', y = 'Color Gradient') +
-  theme(axis.text.x=element_blank(), #remove x axis labels
-        axis.ticks.x=element_blank(), #remove x axis ticks
-        axis.text.y=element_blank(),  #remove y axis labels
-        axis.ticks.y=element_blank() ) +
-  facet_wrap(~PID); smoother
+# smoother <- ggplot(confidence_smooth, aes(x = x, y = y, fill = smoothConf)) +
+#   geom_tile() +
+#   scale_fill_gradient(low = "blue", high = "red") +
+#   coord_fixed() +
+#   ggtitle("Smooth Conf") +
+#   labs(x='Stimulus Size', y = 'Color Gradient') +
+#   theme(axis.text.x=element_blank(), #remove x axis labels
+#         axis.ticks.x=element_blank(), #remove x axis ticks
+#         axis.text.y=element_blank(),  #remove y axis labels
+#         axis.ticks.y=element_blank() ) +
+#   facet_wrap(~PID); smoother
 
 ############### 2.0 Grid simulations ###########################################
 #Simulate under these models 
@@ -717,6 +799,7 @@ y <- matrix(data = NA, nrow = 601, ncol = 601)
 gridY_col <- seq(1, 0, length.out = 601)
 y[1:601,] <- gridY_col #color matrix
 
+
 probBx <- 1-x
 probBy <- 1-y
 confB <- probBx + probBy
@@ -794,28 +877,31 @@ combiScaled <- combi_patch/plotABC; combiScaled
 #we want the L to be the scaled model and the O to be the min model
 x8 <- confB #everything set to stimulus space, need to overwrite O now
 x8 <- (x8/2) #set into the 0-1 space
+x8 <- x8*100 #set to confidence 0-100 (will need to rescale the 4 grid boxes seperately)
 
 #grid2_2
 DistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
 DistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
 x8[201:400, 201:400] <- ifelse(((DistCol-DistSize)>0),  DistSize, DistCol) 
+x8[201:400, 201:400] <- ((x8[201:400, 201:400]/(2/3)) *100)
 
 #grid2_3
 DistCol <- abs((1/3) - y[1:200, 201:400]) #pick color here
 DistSize <- abs((1/3) - x[1:200, 201:400]) #pick size here
 x8[1:200, 201:400] <- ifelse(((DistCol-DistSize)>0),  DistSize, DistCol) 
+x8[1:200, 201:400] <- ((x8[1:200, 201:400]/(2/3)) *100)
 
 #grid3_2 
 DistCol <- abs((1/3) - y[201:400, 401:601]) #pick color here
 DistSize <- abs((1/3) - x[201:400, 401:601]) #pick size here
 x8[201:400, 401:601] <- ifelse(((DistCol-DistSize)>0),  DistSize, DistCol) 
+x8[201:400, 401:601] <- ((x8[201:400, 401:601]/(2/3)) *100)
 
 #grid3_3 
 DistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
 DistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
 x8[1:200, 401:601] <- ifelse(((DistCol-DistSize)>0),  DistSize, DistCol) 
-
-x8 <- x8*100
+x8[1:200, 401:601] <- ((x8[1:200, 401:601]/(2/3)) *100)
 
 # Data 
 colnames(x8) <- paste("Col", 1:601)
@@ -841,28 +927,31 @@ scale_minmodel <- ggplot(dfX8, aes(x = x, y = y, fill = value)) +
 #we want the L to be the scaled model and the O to be the max model
 x9 <- confB #everything set to stimulus space, need to overwrite O now
 x9 <- (x9/2) #set into the 0-1 space
+x9 <- x9*100 #set to confidence 0-100 (will need to rescale the 4 grid boxes seperately)
 
 #grid2_2
 DistCol <- abs((1/3) - y[201:400, 201:400]) #pick color here
 DistSize <- abs((1/3) - x[201:400, 201:400]) #pick size here
 x9[201:400, 201:400] <- ifelse(((DistCol-DistSize)<0),  DistSize, DistCol) 
+x9[201:400, 201:400] <- ((x9[201:400, 201:400]/(2/3)) *100)
 
 #grid2_3
 DistCol <- abs((1/3) - y[1:200, 201:400]) #pick color here
 DistSize <- abs((1/3) - x[1:200, 201:400]) #pick size here
 x9[1:200, 201:400] <- ifelse(((DistCol-DistSize)<0),  DistSize, DistCol) 
+x9[1:200, 201:400] <- ((x9[1:200, 201:400]/(2/3)) *100)
 
 #grid3_2 
 DistCol <- abs((1/3) - y[201:400, 401:601]) #pick color here
 DistSize <- abs((1/3) - x[201:400, 401:601]) #pick size here
 x9[201:400, 401:601] <- ifelse(((DistCol-DistSize)<0),  DistSize, DistCol) 
+x9[201:400, 401:601] <- ((x9[201:400, 401:601]/(2/3)) *100)
 
 #grid3_3 
 DistCol <- abs((1/3) - y[1:200, 401:601]) #pick color here
 DistSize <- abs((1/3) - x[1:200, 401:601]) #pick size here
 x9[1:200, 401:601] <- ifelse(((DistCol-DistSize)<0),  DistSize, DistCol) 
-
-x9 <- x9*100
+x9[1:200, 401:601] <- ((x9[1:200, 401:601]/(2/3)) *100)
 
 # Data 
 colnames(x9) <- paste("Col", 1:601)
@@ -930,6 +1019,7 @@ combined <- combi_patch / scaleMixPlot; combined
 
 rm(confA, confB, confC, confPlot, confPlotA, confPlotC, dfX10, dfX8, dfX9, plotA, plotB, plotC, plotAB, plotABC, probBx, probBy,
    x10, x8, x9, x, y, scale_maxmodel, scale_minmodel, scale_summodel, scaleMixPlot, gridY_col, gridX_row, DistCol, DistSize)
+
 ############### 3.0 Comparing confidence to the models ########################
 modelData <- confidence[c("PID", "distribution_name", "confidence","fish_color", "fish_size", "grid_box")]
 
